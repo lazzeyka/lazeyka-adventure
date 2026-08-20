@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Приключения Лазейки</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-wrapper">
+    <header class="game-header">
+      <h1 class="game-title">Приключения Лазейки</h1>
+      <p class="game-subtitle">Ретро-арканоид с боссами и биомами</p>
+    </header>
+
+    <div class="canvas-container">
+      <canvas id="gameCanvas" width="800" height="600"></canvas>
+      
+      <!-- Экран загрузки ресурсов -->
+      <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-title">Загрузка ресурсов...</div>
+        <div class="progress-bar-container">
+          <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+        <div id="progressText" class="progress-text">0%</div>
+      </div>
+    </div>
+
+    <footer class="game-footer">
+      <div class="badge">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Загрузка ресурсов...</span>
+      </div>
+      <div class="badge">
+        <span>Разрешение: 800 × 600</span>
+      </div>
+    </footer>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
