@@ -20,6 +20,8 @@ class AssetsManager {
         { id: 'w-2-cave', aliases: ['backgrounds/w-2-cave.jpeg', 'w-2-cave.jpeg', 'cave'], src: 'assets/images/backgrounds/w-2-cave.jpeg' },
         { id: 'w-3-mountains', aliases: ['backgrounds/w-3-mountains.jpeg', 'w-3-mountains.jpeg', 'mountains'], src: 'assets/images/backgrounds/w-3-mountains.jpeg' },
         { id: 'w-4-treasury', aliases: ['backgrounds/w-4-treasury.jpeg', 'w-4-treasury.jpeg', 'treasury'], src: 'assets/images/backgrounds/w-4-treasury.jpeg' },
+        { id: 'title-screen-bg', aliases: ['backgrounds/title-screen.png', 'title-screen.png'], src: 'assets/images/backgrounds/title-screen.png' },
+        { id: 'character-cutscene', aliases: ['character/character-cutscene.png', 'character-cutscene.png'], src: 'assets/images/character/character-cutscene.png' },
         { id: 'character-paddle', aliases: ['character/character-paddle.png', 'character-paddle.png', 'paddle'], src: 'assets/images/character/character-paddle.png' },
         { id: 'laz2', aliases: ['character/laz2.png', 'laz2.png'], src: 'assets/images/character/laz2.png' },
         { id: 'qqqqqqqq', aliases: ['character/qqqqqqqq.png', 'qqqqqqqq.png'], src: 'assets/images/character/qqqqqqqq.png' }
