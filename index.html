@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Приключения Лазейки</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <main class="game-wrapper">
     <header class="game-header">
@@ -15,10 +17,10 @@
 
     <div class="canvas-container">
       <canvas id="gameCanvas" width="1280" height="720"></canvas>
-      
+
       <!-- Экран загрузки ресурсов -->
       <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-title">Загрузка ресурсов...</div>
+        <div class="loading-title">Загрузка...</div>
         <div class="progress-bar-container">
           <div id="progressBarFill" class="progress-bar-fill"></div>
         </div>
@@ -39,4 +41,5 @@
 
   <script type="module" src="src/main.js"></script>
 </body>
+
 </html>

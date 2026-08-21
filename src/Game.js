@@ -77,7 +77,7 @@ export default class Game {
     const arenaWidth = 720;
     const arenaHeight = 650;
     const arenaX = (this.width - arenaWidth) / 2;
-    const arenaY = 35;
+    const arenaY = 70; // Подбери число, чтобы арена встала ровно на фон
 
     this.arena = {
       x: arenaX,
@@ -99,9 +99,9 @@ export default class Game {
     // Игровые сущности
     this.paddle = {
       x: this.arena.left + (this.arena.right - this.arena.left - this.difficultySettings.paddleWidth) / 2,
-      y: this.arena.bottom - 44,
+      y: this.arena.bottom - 80,
       width: this.difficultySettings.paddleWidth,
-      height: 28,
+      height: Math.round(this.difficultySettings.paddleWidth * (308 / 512)),
       speed: this.difficultySettings.paddleSpeed
     };
 
@@ -434,8 +434,8 @@ export default class Game {
     this.logoTimer += dt;
     const t = this.logoTimer;
 
-    const fadeInEnd  = 0.6;   // 0s — 0.6s: fade-in
-    const holdEnd    = 1.8;   // 0.6s — 1.8s: показ
+    const fadeInEnd = 0.6;   // 0s — 0.6s: fade-in
+    const holdEnd = 1.8;   // 0.6s — 1.8s: показ
     const fadeOutEnd = this.logoDuration; // 1.8s — 2.8s: fade-out
 
     if (t < fadeInEnd) {
@@ -656,7 +656,7 @@ export default class Game {
       ctx.drawImage(bg, bgX, 0, this.bgRenderWidth, this.bgRenderHeight);
 
       // Затемнение боковин
-      ctx.fillStyle = 'rgba(7, 11, 20, 0.82)';
+      ctx.fillStyle = 'rgba(7, 11, 20, 0.6)';
       ctx.fillRect(0, 0, this.arena.x, height);
       ctx.fillRect(this.arena.x + this.arena.width, 0, width - (this.arena.x + this.arena.width), height);
       ctx.fillRect(this.arena.x, 0, this.arena.width, this.arena.y);
@@ -905,7 +905,7 @@ export default class Game {
     const pulse = Math.sin(this.titleBlinkTimer * 1.4) * 0.5 + 0.5; // 0..1
     const r = Math.round(251 + (255 - 251) * pulse);
     const g = Math.round(191 + (215 - 191) * pulse);
-    const b = Math.round(36  + (0   - 36 ) * pulse);
+    const b = Math.round(36 + (0 - 36) * pulse);
 
     // Тень / glow
     ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.65)`;
@@ -993,7 +993,10 @@ export default class Game {
     const boxX = (width - boxW) / 2;
     const boxY = height - boxH - 55; // = 465px
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+    const boxGradient = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
+    boxGradient.addColorStop(0, '#51627dff'); // Посветлее сверху
+    boxGradient.addColorStop(1, '#2d364cff'); // Потемнее снизу
+    ctx.fillStyle = boxGradient;
     ctx.fillRect(boxX, boxY, boxW, boxH);
 
     ctx.strokeStyle = '#38bdf8';
@@ -1022,11 +1025,11 @@ export default class Game {
       ctx.drawImage(cutsceneImg, charX, charY, charWidth, charHeight);
     }
 
-    // 5. Текст диалога: "Лазейка: «...»" с крупным плотным шрифтом
+    // 5. Текст диалога: "ЛАЗЕЙКА: «...»" с крупным плотным шрифтом
     const textStartX = charX + charWidth + 24;
     const textStartY = boxY + 54;
     const textMaxWidth = boxW - (textStartX - boxX) - 30;
-    const dialogueLine = `Лазейка: «${this.introData.text}»`;
+    const dialogueLine = `ЛАЗЕЙКА: «${this.introData.text}»`;
 
     ctx.textAlign = 'left';
     ctx.fillStyle = '#f8fafc';
