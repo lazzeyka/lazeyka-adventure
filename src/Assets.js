@@ -16,6 +16,7 @@ class AssetsManager {
   get manifest() {
     return {
       images: [
+        { id: 'intro-logo', aliases: ['intro.png', 'intro'], src: 'assets/images/intro.png' },
         { id: 'w-1-jungle', aliases: ['backgrounds/w-1-jungle.jpeg', 'w-1-jungle.jpeg', 'jungle'], src: 'assets/images/backgrounds/w-1-jungle.jpeg' },
         { id: 'w-2-cave', aliases: ['backgrounds/w-2-cave.jpeg', 'w-2-cave.jpeg', 'cave'], src: 'assets/images/backgrounds/w-2-cave.jpeg' },
         { id: 'w-3-mountains', aliases: ['backgrounds/w-3-mountains.jpeg', 'w-3-mountains.jpeg', 'mountains'], src: 'assets/images/backgrounds/w-3-mountains.jpeg' },

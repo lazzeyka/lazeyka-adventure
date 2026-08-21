@@ -13,7 +13,9 @@ import { LevelManager, Difficulty, DIFFICULTY_SETTINGS, BIOMES_DATA } from './Le
  * @enum {string}
  */
 export const GameState = Object.freeze({
-  MENU: 'MENU',                 // Главное меню
+  LOGO: 'LOGO',                 // Лого разработчика (интро-заставка)
+  TITLE: 'TITLE',               // Титульный экран с названием игры
+  MENU: 'MENU',                 // Главное меню (выбор сложности)
   INTRO: 'INTRO',               // Сюжетная катсцена перед новым биомом (1-1, 2-1, 3-1, 4-1)
   LEVEL_START: 'LEVEL_START',   // Чистый экран перехода между подуровнями (1-2, 1-3, ...)
   PLAYING: 'PLAYING',           // Игровой процесс (Арканоид)
@@ -44,9 +46,17 @@ export default class Game {
     // Сложность (по умолчанию «Прогулка»)
     this.difficulty = Difficulty.WALK;
 
-    // Состояние экранов
-    this.state = GameState.PLAYING;
+    // Состояние экранов (игра стартует с лого-заставки)
+    this.state = GameState.LOGO;
     this.previousState = null;
+
+    // Таймеры для анимации стартовых экранов
+    this.logoTimer = 0;        // fade-in + задержка лого
+    this.logoDuration = 2.8;   // сек: 0.6 fade-in + 1.2 показ + 1.0 fade-out
+    this.logoAlpha = 0;        // 0..1, управляется в update
+
+    // Таймер мигания «Нажмите любую клавишу» на Title
+    this.titleBlinkTimer = 0;
 
     // Прогресс кампании
     this.currentWorld = 1; // 1..4 (Биомы)
@@ -303,12 +313,14 @@ export default class Game {
       if (e.code === 'KeyH') this.toggleDifficulty(); // Смена сложности
 
       // Переключение экранов для отладки
-      if (e.code === 'Digit1') this.setState(GameState.MENU);
-      if (e.code === 'Digit2') this.setState(GameState.INTRO);
-      if (e.code === 'Digit3') this.setState(GameState.LEVEL_START);
-      if (e.code === 'Digit4') this.setState(GameState.PLAYING);
-      if (e.code === 'Digit5') this.setState(GameState.GAMEOVER);
-      if (e.code === 'Digit6') this.setState(GameState.VICTORY);
+      if (e.code === 'Digit1') this.setState(GameState.LOGO);
+      if (e.code === 'Digit2') this.setState(GameState.TITLE);
+      if (e.code === 'Digit3') this.setState(GameState.MENU);
+      if (e.code === 'Digit4') this.setState(GameState.INTRO);
+      if (e.code === 'Digit5') this.setState(GameState.LEVEL_START);
+      if (e.code === 'Digit6') this.setState(GameState.PLAYING);
+      if (e.code === 'Digit7') this.setState(GameState.GAMEOVER);
+      if (e.code === 'Digit8') this.setState(GameState.VICTORY);
     });
 
     window.addEventListener('keyup', (e) => {
@@ -337,6 +349,15 @@ export default class Game {
    */
   handleActionKey() {
     switch (this.state) {
+      case GameState.LOGO:
+        // Пропуск лого-заставки по нажатию
+        this.logoAlpha = 0;
+        this.logoTimer = this.logoDuration;
+        this.setState(GameState.TITLE);
+        break;
+      case GameState.TITLE:
+        this.setState(GameState.MENU);
+        break;
       case GameState.MENU:
         this.setState(GameState.INTRO);
         break;
@@ -397,8 +418,36 @@ export default class Game {
   update(dt) {
     this.updateParallaxCamera(dt);
 
-    if (this.state === GameState.PLAYING) {
+    if (this.state === GameState.LOGO) {
+      this.updateLogo(dt);
+    } else if (this.state === GameState.TITLE) {
+      this.titleBlinkTimer += dt;
+    } else if (this.state === GameState.PLAYING) {
       this.updatePlaying(dt);
+    }
+  }
+
+  /**
+   * Логика fade-in / показ / fade-out лого-заставки
+   */
+  updateLogo(dt) {
+    this.logoTimer += dt;
+    const t = this.logoTimer;
+
+    const fadeInEnd  = 0.6;   // 0s — 0.6s: fade-in
+    const holdEnd    = 1.8;   // 0.6s — 1.8s: показ
+    const fadeOutEnd = this.logoDuration; // 1.8s — 2.8s: fade-out
+
+    if (t < fadeInEnd) {
+      this.logoAlpha = t / fadeInEnd;
+    } else if (t < holdEnd) {
+      this.logoAlpha = 1;
+    } else if (t < fadeOutEnd) {
+      this.logoAlpha = 1 - (t - holdEnd) / (fadeOutEnd - holdEnd);
+    } else {
+      // Автоматически переходим на Title Screen
+      this.logoAlpha = 0;
+      this.setState(GameState.TITLE);
     }
   }
 
@@ -550,6 +599,16 @@ export default class Game {
   render() {
     const { ctx, width, height } = this;
     ctx.clearRect(0, 0, width, height);
+
+    // На экранах LOGO и TITLE не нужны фон арены и HUD
+    if (this.state === GameState.LOGO) {
+      this.renderLogo();
+      return;
+    }
+    if (this.state === GameState.TITLE) {
+      this.renderTitle();
+      return;
+    }
 
     this.renderParallaxBackground();
     this.renderSideHUD();
@@ -795,6 +854,78 @@ export default class Game {
     ctx.textAlign = 'right';
     ctx.fillText('[L] +1 ЖИЗНЬ  [N] СЛЕД. УРОВЕНЬ', rightX, 640);
     ctx.fillText('[P] ПАУЗА', rightX, 662);
+  }
+
+  /**
+   * Лого-заставка разработчика с плавным fade-in/fade-out
+   */
+  renderLogo() {
+    const { ctx, width, height } = this;
+
+    // Чёрный фон
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+
+    const logo = Assets.getImage('intro-logo');
+    if (logo) {
+      const maxW = 640;
+      const maxH = 400;
+      const aspect = logo.naturalWidth / logo.naturalHeight;
+      let drawW = maxW;
+      let drawH = drawW / aspect;
+      if (drawH > maxH) { drawH = maxH; drawW = drawH * aspect; }
+
+      const drawX = (width - drawW) / 2;
+      const drawY = (height - drawH) / 2;
+
+      ctx.globalAlpha = Math.max(0, Math.min(1, this.logoAlpha));
+      ctx.drawImage(logo, drawX, drawY, drawW, drawH);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /**
+   * Титульный экран с названием игры, анимированным текстом и мигающей подсказкой
+   */
+  renderTitle() {
+    const { ctx, width, height } = this;
+
+    // Фон из title-screen-bg (или чёрный)
+    const bg = Assets.getImage('title-screen-bg');
+    if (bg) {
+      ctx.drawImage(bg, 0, 0, width, height);
+      ctx.fillStyle = 'rgba(5, 7, 15, 0.55)';
+      ctx.fillRect(0, 0, width, height);
+    } else {
+      ctx.fillStyle = '#05070f';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // Мягкое переливание цвета заголовка: золото <-> янтарь
+    const pulse = Math.sin(this.titleBlinkTimer * 1.4) * 0.5 + 0.5; // 0..1
+    const r = Math.round(251 + (255 - 251) * pulse);
+    const g = Math.round(191 + (215 - 191) * pulse);
+    const b = Math.round(36  + (0   - 36 ) * pulse);
+
+    // Тень / glow
+    ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.65)`;
+    ctx.shadowBlur = 24 + pulse * 12;
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.font = '40px "Press Start 2P", monospace';
+    ctx.fillText('ПРИКЛЮЧЕНИЯ', width / 2, height / 2 - 55);
+    ctx.fillText('ЛАЗЕЙКИ', width / 2, height / 2 + 15);
+
+    ctx.shadowBlur = 0;
+
+    // Мигающая надпись «Нажмите любую клавишу»
+    const blinkVisible = Math.floor(this.titleBlinkTimer * 1.8) % 2 === 0;
+    if (blinkVisible) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '12px "Press Start 2P", monospace';
+      ctx.fillText('НАЖМИТЕ ЛЮБУЮ КЛАВИШУ', width / 2, height / 2 + 100);
+    }
   }
 
   renderMenu() {
