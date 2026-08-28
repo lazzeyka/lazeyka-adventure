@@ -33,6 +33,16 @@
         <span id="statusDot" class="status-dot"></span>
         <span id="statusText">Загрузка ресурсов...</span>
       </div>
+
+      <!-- Аудио-контроллер (громкость и Mute) -->
+      <div class="audio-controls badge" id="audioControls">
+        <button id="muteBtn" class="audio-btn" type="button" title="Вкл/Выкл музыку (Клавиша M)" aria-label="Музыка">
+          <span id="muteIcon" class="audio-icon">🔊</span>
+        </button>
+        <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="50" step="1" title="Громкость музыки ([ / ])">
+        <span id="volumeValue" class="volume-text">50%</span>
+      </div>
+
       <div class="badge">
         <span>Разрешение: 1280 × 720 (16:9)</span>
       </div>

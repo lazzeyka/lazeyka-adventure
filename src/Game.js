@@ -5,6 +5,8 @@
  */
 
 import Assets from './Assets.js';
+import MusicManager from './MusicManager.js';
+import SoundManager from './SoundManager.js';
 import { LevelManager, Difficulty, DIFFICULTY_SETTINGS, BIOMES_DATA } from './LevelManager.js';
 
 /**
@@ -140,6 +142,7 @@ export default class Game {
   init() {
     this.ctx.imageSmoothingEnabled = false;
     this.setupInputListeners();
+    MusicManager.syncWithGameState(this.state, this.currentWorld);
   }
 
   /**
@@ -150,6 +153,9 @@ export default class Game {
     const { bricks, boss } = LevelManager.generateLevel(this.currentWorld, this.currentLevel, this.arena);
     this.bricks = bricks;
     this.boss = boss;
+    if (this.boss) {
+      SoundManager.playBossSpawn();
+    }
   }
 
   /**
@@ -158,6 +164,7 @@ export default class Game {
   toggleDifficulty() {
     this.difficulty = this.difficulty === Difficulty.WALK ? Difficulty.HARDCORE : Difficulty.WALK;
     console.log(`[Game] Сложность: ${this.difficultySettings.name}`);
+    SoundManager.playUiClick();
 
     this.paddle.width = this.difficultySettings.paddleWidth;
     this.paddle.speed = this.difficultySettings.paddleSpeed;
@@ -187,6 +194,7 @@ export default class Game {
    */
   advanceLevel() {
     this.levelClearBannerTimer = 1.0;
+    SoundManager.playLevelWin();
 
     if (this.currentLevel < 3) {
       // Переход между подуровнями внутри одного биома (например, 1-1 -> 1-2)
@@ -242,6 +250,23 @@ export default class Game {
     this.previousState = this.state;
     this.state = newState;
 
+    // Управление воспроизведением фонового видео титульного экрана
+    const titleVideo = Assets.getVideo('title-screen-video');
+    if (titleVideo) {
+      if (newState === GameState.TITLE || newState === GameState.MENU) {
+        if (titleVideo.paused) {
+          titleVideo.play().catch(() => {});
+        }
+      } else {
+        if (!titleVideo.paused) {
+          titleVideo.pause();
+        }
+      }
+    }
+
+    // Синхронизация фоновой музыки с новым состоянием игры и биомом
+    MusicManager.syncWithGameState(newState, this.currentWorld);
+
     if (this.state === GameState.INTRO && params.intro) {
       this.introData = { ...this.introData, ...params.intro };
     } else if (this.state === GameState.PLAYING && params.reset) {
@@ -259,6 +284,7 @@ export default class Game {
     this.ball.speed = this.difficultySettings.ballSpeed;
     this.ball.vx = (this.ball.speed * 0.6) * (Math.random() > 0.5 ? 1 : -1);
     this.ball.vy = -this.ball.speed * 0.8;
+    SoundManager.playPlayerSpawn();
   }
 
   /**
@@ -275,6 +301,7 @@ export default class Game {
     this.resetBallOnPaddle();
     this.loadLevel();
     this.cameraRatio = 0.5;
+    MusicManager.syncWithGameState(this.state, this.currentWorld);
   }
 
   /**
@@ -282,6 +309,7 @@ export default class Game {
    */
   onBallLost() {
     this.lives--;
+    SoundManager.playBallLost();
     if (this.lives <= 0) {
       this.setState(GameState.GAMEOVER);
     } else {
@@ -294,6 +322,8 @@ export default class Game {
    */
   setupInputListeners() {
     window.addEventListener('keydown', (e) => {
+      MusicManager.unlock();
+
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.keys.left = true;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') this.keys.right = true;
 
@@ -304,6 +334,17 @@ export default class Game {
 
       if (e.code === 'KeyP' || e.code === 'Escape') {
         this.togglePause();
+      }
+
+      // Управление музыкой (Mute / громкость)
+      if (e.code === 'KeyM') {
+        MusicManager.toggleMute();
+      }
+      if (e.code === 'BracketLeft' || e.code === 'Minus') {
+        MusicManager.setVolume(MusicManager.getVolume() - 0.05);
+      }
+      if (e.code === 'BracketRight' || e.code === 'Equal') {
+        MusicManager.setVolume(MusicManager.getVolume() + 0.05);
       }
 
       // ЧИТ-КЛАВИШИ:
@@ -340,6 +381,7 @@ export default class Game {
     });
 
     this.canvas.addEventListener('click', () => {
+      MusicManager.unlock();
       this.handleActionKey();
     });
   }
@@ -353,34 +395,48 @@ export default class Game {
         // Пропуск лого-заставки по нажатию
         this.logoAlpha = 0;
         this.logoTimer = this.logoDuration;
+        SoundManager.playUiClick();
         this.setState(GameState.TITLE);
         break;
       case GameState.TITLE:
+        SoundManager.playUiClick();
         this.setState(GameState.MENU);
         break;
       case GameState.MENU:
+        SoundManager.playUiClick();
         this.setState(GameState.INTRO);
         break;
       case GameState.INTRO:
       case GameState.LEVEL_START:
+        SoundManager.playUiClick();
         this.setState(GameState.PLAYING);
         break;
       case GameState.PLAYING:
-        if (this.ball.isStuck) this.ball.isStuck = false;
+        if (this.ball.isStuck) {
+          this.ball.isStuck = false;
+          SoundManager.playPaddleHit();
+        }
         break;
       case GameState.GAMEOVER:
       case GameState.VICTORY:
+        SoundManager.playUiClick();
         this.setState(GameState.PLAYING, { reset: true });
         break;
       case GameState.PAUSED:
+        SoundManager.playPauseOut();
         this.setState(GameState.PLAYING);
         break;
     }
   }
 
   togglePause() {
-    if (this.state === GameState.PLAYING) this.setState(GameState.PAUSED);
-    else if (this.state === GameState.PAUSED) this.setState(GameState.PLAYING);
+    if (this.state === GameState.PLAYING) {
+      SoundManager.playPauseIn();
+      this.setState(GameState.PAUSED);
+    } else if (this.state === GameState.PAUSED) {
+      SoundManager.playPauseOut();
+      this.setState(GameState.PLAYING);
+    }
   }
 
   start() {
@@ -491,14 +547,17 @@ export default class Game {
       if (this.ball.x - this.ball.radius <= this.arena.left) {
         this.ball.x = this.arena.left + this.ball.radius;
         this.ball.vx = Math.abs(this.ball.vx);
+        SoundManager.playWallHit();
       }
       if (this.ball.x + this.ball.radius >= this.arena.right) {
         this.ball.x = this.arena.right - this.ball.radius;
         this.ball.vx = -Math.abs(this.ball.vx);
+        SoundManager.playWallHit();
       }
       if (this.ball.y - this.ball.radius <= this.arena.top) {
         this.ball.y = this.arena.top + this.ball.radius;
         this.ball.vy = Math.abs(this.ball.vy);
+        SoundManager.playWallHit();
       }
 
       // 2. Столкновения с блоками
@@ -513,6 +572,8 @@ export default class Game {
 
         if (distanceSq <= this.ball.radius * this.ball.radius) {
           const result = brick.hit();
+          SoundManager.playBlockHit(brick.type, result.hpBefore, result.hpAfter);
+
           if (result.score > 0) {
             this.score += Math.round(result.score * this.difficultySettings.scoreMultiplier);
           }
@@ -548,6 +609,9 @@ export default class Game {
           if (this.boss.hp <= 0) {
             this.boss.isDefeated = true;
             this.score += 2000;
+            SoundManager.playBossDeath();
+          } else {
+            SoundManager.playPaddleHit();
           }
 
           const overlapX = this.ball.radius - Math.abs(distX);
@@ -574,6 +638,7 @@ export default class Game {
         this.ball.x <= this.paddle.x + this.paddle.width + this.ball.radius
       ) {
         this.ball.y = this.paddle.y - this.ball.radius;
+        SoundManager.playPaddleHit();
 
         const hitOffset = (this.ball.x - (this.paddle.x + this.paddle.width / 2)) / (this.paddle.width / 2);
         const clampedHit = Math.max(-0.9, Math.min(0.9, hitOffset));
@@ -890,10 +955,29 @@ export default class Game {
   renderTitle() {
     const { ctx, width, height } = this;
 
-    // Фон из title-screen-bg (или чёрный)
-    const bg = Assets.getImage('title-screen-bg');
-    if (bg) {
-      ctx.drawImage(bg, 0, 0, width, height);
+    // Фоновое видео title-screen.mp4 (с фолбэком на картинку title-screen-bg или сплошной фон)
+    const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
+    let hasBg = false;
+
+    if (video) {
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+      if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, width, height);
+        hasBg = true;
+      }
+    }
+
+    if (!hasBg) {
+      const bg = Assets.getImage('title-screen-bg');
+      if (bg) {
+        ctx.drawImage(bg, 0, 0, width, height);
+        hasBg = true;
+      }
+    }
+
+    if (hasBg) {
       ctx.fillStyle = 'rgba(5, 7, 15, 0.55)';
       ctx.fillRect(0, 0, width, height);
     } else {
@@ -931,9 +1015,28 @@ export default class Game {
   renderMenu() {
     const { ctx, width, height } = this;
 
-    const titleBg = Assets.getImage('title-screen-bg');
-    if (titleBg) {
-      ctx.drawImage(titleBg, 0, 0, width, height);
+    const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
+    let hasBg = false;
+
+    if (video) {
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+      if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, width, height);
+        hasBg = true;
+      }
+    }
+
+    if (!hasBg) {
+      const titleBg = Assets.getImage('title-screen-bg');
+      if (titleBg) {
+        ctx.drawImage(titleBg, 0, 0, width, height);
+        hasBg = true;
+      }
+    }
+
+    if (hasBg) {
       ctx.fillStyle = 'rgba(8, 11, 17, 0.72)';
       ctx.fillRect(0, 0, width, height);
     } else {

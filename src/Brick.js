@@ -62,24 +62,26 @@ export class Brick {
 
   /**
    * Обработка попадания по блоку
-   * @returns {{ destroyed: boolean, score: number, hitSuccess: boolean }}
+   * @returns {{ destroyed: boolean, score: number, hitSuccess: boolean, hpBefore: number, hpAfter: number, type: string }}
    */
   hit() {
     this.flashTimer = 0.12; // Вспышка на 120ms
+    const hpBefore = this.hp;
 
     if (!this.isDestructible) {
-      return { destroyed: false, score: 0, hitSuccess: true };
+      return { destroyed: false, score: 0, hitSuccess: true, hpBefore, hpAfter: this.hp, type: this.type };
     }
 
     this.hp--;
+    const hpAfter = this.hp;
 
     if (this.hp <= 0) {
       this.isDestroyed = true;
-      return { destroyed: true, score: this.scoreValue, hitSuccess: true };
+      return { destroyed: true, score: this.scoreValue, hitSuccess: true, hpBefore, hpAfter, type: this.type };
     }
 
     // Блок STRONG поврежден после 1-го удара
-    return { destroyed: false, score: 60, hitSuccess: true };
+    return { destroyed: false, score: 60, hitSuccess: true, hpBefore, hpAfter, type: this.type };
   }
 
   /**

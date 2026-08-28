@@ -7,6 +7,8 @@ class AssetsManager {
   constructor() {
     this.images = new Map();
     this.music = new Map();
+    this.videos = new Map();
+    this.sounds = new Map();
     this.loaded = false;
   }
 
@@ -35,6 +37,25 @@ class AssetsManager {
         { id: 'level-3', aliases: ['level-3.mp3'], src: 'assets/audio/music/level-3.mp3' },
         { id: 'level-4', aliases: ['level-4.mp3'], src: 'assets/audio/music/level-4.mp3' },
         { id: 'title-screen', aliases: ['title-screen.mp3', 'title'], src: 'assets/audio/music/title-screen.mp3' }
+      ],
+      videos: [
+        { id: 'title-screen-video', aliases: ['backgrounds/title-screen.mp4', 'title-screen.mp4', 'title-video'], src: 'assets/images/backgrounds/title-screen.mp4' }
+      ],
+      sounds: [
+        { id: 'ui_click', aliases: ['ui_click.wav', 'click'], src: 'assets/audio/sfx/ui_click.wav' },
+        { id: 'pause_in', aliases: ['pause_in.wav'], src: 'assets/audio/sfx/pause_in.wav' },
+        { id: 'pause_out', aliases: ['pause_out.wav'], src: 'assets/audio/sfx/pause_out.wav' },
+        { id: 'paddle_hit', aliases: ['paddle_hit.wav'], src: 'assets/audio/sfx/paddle_hit.wav' },
+        { id: 'wall_hit', aliases: ['wall_hit.wav'], src: 'assets/audio/sfx/wall_hit.wav' },
+        { id: 'ball_lost', aliases: ['ball_lost.wav'], src: 'assets/audio/sfx/ball_lost.wav' },
+        { id: 'player_spawn', aliases: ['player_spawn.wav'], src: 'assets/audio/sfx/player_spawn.wav' },
+        { id: 'block_normal_hit', aliases: ['block_normal_hit.wav'], src: 'assets/audio/sfx/block_normal_hit.wav' },
+        { id: 'block_strong_hit_1', aliases: ['block_strong_hit_1.wav'], src: 'assets/audio/sfx/block_strong_hit_1.wav' },
+        { id: 'block_strong_hit_2', aliases: ['block_strong_hit_2.wav'], src: 'assets/audio/sfx/block_strong_hit_2.wav' },
+        { id: 'block_indestructible_hit', aliases: ['block_indestructible_hit.wav'], src: 'assets/audio/sfx/block_indestructible_hit.wav' },
+        { id: 'boss_spawn', aliases: ['boss_spawn.wav'], src: 'assets/audio/sfx/boss_spawn.wav' },
+        { id: 'boss_death', aliases: ['boss_death.wav'], src: 'assets/audio/sfx/boss_death.wav' },
+        { id: 'level_win', aliases: ['level_win.wav', 'level_win.wav.wav'], src: 'assets/audio/sfx/level_win.wav.wav' }
       ]
     };
   }
@@ -50,6 +71,66 @@ class AssetsManager {
       img.onload = () => resolve(img);
       img.onerror = (err) => reject(new Error(`Не удалось загрузить изображение: ${src}`));
       img.src = src;
+    });
+  }
+
+  /**
+   * Загрузка отдельного видео
+   * @param {string} src
+   * @returns {Promise<HTMLVideoElement>}
+   */
+  _loadVideo(src) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.defaultMuted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.preload = 'auto';
+
+      let resolved = false;
+      const cleanup = () => {
+        video.removeEventListener('canplay', onReady);
+        video.removeEventListener('canplaythrough', onReady);
+        video.removeEventListener('loadeddata', onReady);
+        video.removeEventListener('error', onError);
+      };
+
+      const onReady = () => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          video.play().catch(() => {});
+          resolve(video);
+        }
+      };
+
+      const onError = () => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          reject(new Error(`Не удалось загрузить видео: ${src}`));
+        }
+      };
+
+      video.addEventListener('canplay', onReady, { once: true });
+      video.addEventListener('canplaythrough', onReady, { once: true });
+      video.addEventListener('loadeddata', onReady, { once: true });
+      video.addEventListener('error', onError, { once: true });
+
+      // Таймаут на случай задержки загрузки
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          video.play().catch(() => {});
+          resolve(video);
+        }
+      }, 4000);
+
+      video.src = src;
+      video.load();
     });
   }
 
@@ -110,8 +191,8 @@ class AssetsManager {
    * @returns {Promise<void>}
    */
   async load(onProgress = () => {}) {
-    const { images, music } = this.manifest;
-    const totalItems = images.length + music.length;
+    const { images = [], music = [], videos = [], sounds = [] } = this.manifest;
+    const totalItems = images.length + music.length + videos.length + sounds.length;
     let completedItems = 0;
 
     const reportProgress = (item) => {
@@ -137,6 +218,23 @@ class AssetsManager {
       }
     });
 
+    // Запуск параллельной загрузки видео
+    const videoPromises = videos.map(async (item) => {
+      try {
+        const video = await this._loadVideo(item.src);
+        this.videos.set(item.id, video);
+        if (item.aliases) {
+          for (const alias of item.aliases) {
+            this.videos.set(alias, video);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Assets] Ошибка загрузки видео "${item.src}":`, err.message);
+      } finally {
+        reportProgress(item);
+      }
+    });
+
     // Запуск параллельной загрузки музыки
     const musicPromises = music.map(async (item) => {
       try {
@@ -154,7 +252,24 @@ class AssetsManager {
       }
     });
 
-    await Promise.allSettled([...imagePromises, ...musicPromises]);
+    // Запуск параллельной загрузки звуковых эффектов (SFX)
+    const soundPromises = sounds.map(async (item) => {
+      try {
+        const audio = await this._loadAudio(item.src);
+        this.sounds.set(item.id, audio);
+        if (item.aliases) {
+          for (const alias of item.aliases) {
+            this.sounds.set(alias, audio);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Assets] Ошибка загрузки звука "${item.src}":`, err.message);
+      } finally {
+        reportProgress(item);
+      }
+    });
+
+    await Promise.allSettled([...imagePromises, ...videoPromises, ...musicPromises, ...soundPromises]);
     this.loaded = true;
   }
 
@@ -168,12 +283,39 @@ class AssetsManager {
   }
 
   /**
-   * Получить загруженный аудиофайл по ключу или имени файла
+   * Получить загруженное видео по ключу или имени файла
+   * @param {string} key
+   * @returns {HTMLVideoElement|null}
+   */
+  getVideo(key) {
+    return this.videos.get(key) || null;
+  }
+
+  /**
+   * Получить загруженный аудиофайл музыки по ключу или имени файла
    * @param {string} key
    * @returns {HTMLAudioElement|null}
    */
   getMusic(key) {
     return this.music.get(key) || null;
+  }
+
+  /**
+   * Получить загруженный звуковой эффект (SFX) по ключу или имени файла
+   * @param {string} key
+   * @returns {HTMLAudioElement|null}
+   */
+  getSound(key) {
+    return (this.sounds && this.sounds.get(key)) || null;
+  }
+
+  /**
+   * Алиас для getSound
+   * @param {string} key
+   * @returns {HTMLAudioElement|null}
+   */
+  getSFX(key) {
+    return (this.sounds && this.sounds.get(key)) || null;
   }
 }
 
