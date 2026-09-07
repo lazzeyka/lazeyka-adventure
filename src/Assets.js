@@ -27,7 +27,11 @@ class AssetsManager {
         { id: 'character-cutscene', aliases: ['character/character-cutscene.png', 'character-cutscene.png'], src: 'assets/images/character/character-cutscene.png' },
         { id: 'character-paddle', aliases: ['character/character-paddle.png', 'character-paddle.png', 'paddle'], src: 'assets/images/character/character-paddle.png' },
         { id: 'laz2', aliases: ['character/laz2.png', 'laz2.png'], src: 'assets/images/character/laz2.png' },
-        { id: 'qqqqqqqq', aliases: ['character/qqqqqqqq.png', 'qqqqqqqq.png'], src: 'assets/images/character/qqqqqqqq.png' }
+        { id: 'qqqqqqqq', aliases: ['character/qqqqqqqq.png', 'qqqqqqqq.png'], src: 'assets/images/character/qqqqqqqq.png' },
+        { id: 'boss-1', aliases: ['bosses/B-1.png', 'B-1.png', 'b-1'], src: 'assets/images/bosses/B-1.png' },
+        { id: 'boss-2', aliases: ['bosses/B-2.png', 'B-2.png', 'b-2'], src: 'assets/images/bosses/B-2.png' },
+        { id: 'boss-3', aliases: ['bosses/B-3.png', 'B-3.png', 'b-3'], src: 'assets/images/bosses/B-3.png' },
+        { id: 'boss-4', aliases: ['bosses/B-4.png', 'B-4.png', 'b-4'], src: 'assets/images/bosses/B-4.png' }
       ],
       music: [
         { id: 'cutscenes', aliases: ['cutscenes.mp3'], src: 'assets/audio/music/cutscenes.mp3' },

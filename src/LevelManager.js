@@ -233,9 +233,15 @@ export class LevelManager {
 
     const availableWidth = playableWidth - paddingX * 2 - (cols - 1) * gapX;
     const brickWidth = Math.floor(availableWidth / cols);
-    const brickHeight = 28;
+    const brickHeight = 26;
+    // Размер босса равен по высоте 5 рядам блоков (5 * 26 = 130px), пропорции спрайта 1:1
+    const bossHeight = brickHeight * 5;
+    const bossWidth = bossHeight;
+
+    const bossY = arena.top + 28;
+    // Смещаем ряды блоков ниже босса, чтобы оставалось комфортное пространство
+    const startY = bossY + bossHeight + 24;
     const startX = arena.left + paddingX;
-    const startY = arena.top + 130;
 
     // Защитные блоки свиты босса
     const bossLayout = [
@@ -258,15 +264,22 @@ export class LevelManager {
 
     const biome = BIOMES_DATA[world] || BIOMES_DATA[1];
     const bossName = biome.sublevels[2] || 'Босс Биома';
+    const initialBossX = arena.left + (playableWidth - bossWidth) / 2;
 
     const boss = {
+      world,
       name: bossName,
       hp: 10 + (world - 1) * 3, // HP масштабируется по биомам (10, 13, 16, 19)
       maxHp: 10 + (world - 1) * 3,
-      x: arena.left + (playableWidth - 160) / 2,
-      y: arena.top + 40,
-      width: 160,
-      height: 60,
+      x: initialBossX,
+      y: bossY,
+      width: bossWidth,
+      height: bossHeight,
+      baseX: initialBossX,
+      patrolDistance: 80,       // Амплитуда патрулирования влево/вправо
+      patrolSpeed: 70,          // Скорость патрулирования (px/сек)
+      patrolDirection: 1,       // 1 = вправо, -1 = влево
+      flashTimer: 0,            // Таймер эффекта вспышки урона
       isDefeated: false
     };
 

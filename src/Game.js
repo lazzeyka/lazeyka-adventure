@@ -526,6 +526,29 @@ export default class Game {
       brick.update(dt);
     }
 
+    // Логика движения и таймеров босса (X-3)
+    if (this.boss && !this.boss.isDefeated) {
+      if (this.boss.flashTimer > 0) {
+        this.boss.flashTimer = Math.max(0, this.boss.flashTimer - dt);
+      }
+
+      // Плавное циклическое движение (патрулирование)
+      const speed = this.boss.patrolSpeed || 70;
+      const dir = this.boss.patrolDirection || 1;
+      const minX = Math.max(this.arena.left + 15, this.boss.baseX - (this.boss.patrolDistance || 80));
+      const maxX = Math.min(this.arena.right - 15 - this.boss.width, this.boss.baseX + (this.boss.patrolDistance || 80));
+
+      this.boss.x += speed * dir * dt;
+
+      if (this.boss.x >= maxX) {
+        this.boss.x = maxX;
+        this.boss.patrolDirection = -1;
+      } else if (this.boss.x <= minX) {
+        this.boss.x = minX;
+        this.boss.patrolDirection = 1;
+      }
+    }
+
     // Движение ракетки
     if (this.keys.left) this.paddle.x -= this.paddle.speed * dt;
     if (this.keys.right) this.paddle.x += this.paddle.speed * dt;
@@ -604,6 +627,7 @@ export default class Game {
 
         if (distanceSq <= this.ball.radius * this.ball.radius) {
           this.boss.hp--;
+          this.boss.flashTimer = 0.16; // Вспышка урона 160мс
           this.score += 150;
 
           if (this.boss.hp <= 0) {
@@ -793,35 +817,82 @@ export default class Game {
   }
 
   renderBoss(ctx) {
-    const { x, y, width, height, hp, maxHp } = this.boss;
+    const { x, y, width, height, hp, maxHp, flashTimer, world, name } = this.boss;
 
-    ctx.fillStyle = '#7f1d1d';
-    ctx.fillRect(x, y, width, height);
+    ctx.save();
 
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(x, y, width, height);
+    // 1. Отрисовка спрайта босса
+    const bossImg = Assets.getImage(`boss-${world}`) || Assets.getImage(`B-${world}.png`);
 
-    ctx.fillStyle = '#fef08a';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('БОСС', x + width / 2, y + 24);
+    if (bossImg) {
+      if (flashTimer > 0) {
+        // Эффект вспышки при получении урона:
+        // Рисуем спрайт босса, затем накладываем ярко-красный оттенок через 'source-atop'
+        const offscreen = document.createElement('canvas');
+        offscreen.width = width;
+        offscreen.height = height;
+        const offCtx = offscreen.getContext('2d');
+        offCtx.imageSmoothingEnabled = false;
 
-    const barW = width - 20;
+        offCtx.drawImage(bossImg, 0, 0, width, height);
+
+        offCtx.globalCompositeOperation = 'source-atop';
+        offCtx.fillStyle = 'rgba(239, 68, 68, 0.75)'; // Яркий алый цвет урона
+        offCtx.fillRect(0, 0, width, height);
+
+        ctx.drawImage(offscreen, x, y);
+
+        // Дополнительное красное свечение вокруг спрайта при ударе
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 2, y - 2, width + 4, height + 4);
+      } else {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(bossImg, x, y, width, height);
+      }
+    } else {
+      // Запасной вариант (фоллбек), если изображение еще не подгрузилось
+      ctx.fillStyle = flashTimer > 0 ? '#ef4444' : '#7f1d1d';
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, width, height);
+    }
+
+    // 2. Индикатор здоровья (HP Bar) над боссом
+    const barW = Math.max(120, width);
     const barH = 10;
-    const barX = x + 10;
-    const barY = y + 38;
+    const barX = x + (width - barW) / 2;
+    const barY = Math.max(this.arena.top + 10, y - 18);
 
-    ctx.fillStyle = '#1e293b';
+    // Подложка полосы HP
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.fillRect(barX, barY, barW, barH);
 
-    const fillRatio = Math.max(0, hp / maxHp);
-    ctx.fillStyle = '#22c55e';
-    ctx.fillRect(barX, barY, barW * fillRatio, barH);
+    const fillRatio = Math.max(0, Math.min(1, hp / maxHp));
+    // Цвет индикатора: зеленый -> желтый -> красный
+    let barColor = '#22c55e';
+    if (fillRatio < 0.3) {
+      barColor = '#ef4444';
+    } else if (fillRatio < 0.6) {
+      barColor = '#eab308';
+    }
 
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX + 1, barY + 1, (barW - 2) * fillRatio, barH - 2);
+
+    // Рамка полосы HP
     ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(barX, barY, barW, barH);
+
+    // Текст имени босса над полосой HP (если помещается) или на полосе
+    ctx.fillStyle = '#fef08a';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${name || 'БОСС'} [${hp}/${maxHp}]`, barX + barW / 2, barY - 4);
+
+    ctx.restore();
   }
 
   renderArenaWalls() {
