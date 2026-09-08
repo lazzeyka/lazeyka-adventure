@@ -1417,7 +1417,7 @@ export default class Game {
 
     ctx.fillStyle = '#f8fafc';
     ctx.font = '12px "Press Start 2P", monospace';
-    ctx.fillText('НАЖМИТЕ P ИЛИ ПРОБЕЛ ДЛЯ ПРОДОЛЖЕНИЯ', width / 2, height / 2 + 35);
+    ctx.fillText('НАЖМИТЕ ESC ИЛИ ПРОБЕЛ ДЛЯ ПРОДОЛЖЕНИЯ', width / 2, height / 2 + 35);
   }
 
   renderGameOverOverlay() {
