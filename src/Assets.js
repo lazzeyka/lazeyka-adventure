@@ -90,7 +90,6 @@ class AssetsManager {
       video.defaultMuted = true;
       video.loop = true;
       video.playsInline = true;
-      video.autoplay = true;
       video.preload = 'auto';
 
       let resolved = false;
@@ -105,7 +104,6 @@ class AssetsManager {
         if (!resolved) {
           resolved = true;
           cleanup();
-          video.play().catch(() => {});
           resolve(video);
         }
       };

@@ -69,6 +69,14 @@ body {
   align-items: center;
   gap: 6px;
   text-align: center;
+  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+}
+
+.game-header.header-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px);
 }
 
 .game-title {

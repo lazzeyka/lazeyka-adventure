@@ -234,13 +234,14 @@ export class LevelManager {
     const availableWidth = playableWidth - paddingX * 2 - (cols - 1) * gapX;
     const brickWidth = Math.floor(availableWidth / cols);
     const brickHeight = 26;
-    // Размер босса равен по высоте 5 рядам блоков (5 * 26 = 130px), пропорции спрайта 1:1
-    const bossHeight = brickHeight * 5;
-    const bossWidth = bossHeight;
+    // Настройка масштаба босса: количество рядов блоков по высоте (по умолчанию 9, можно менять от 8 до 10+)
+    const BOSS_SIZE_BRICK_ROWS = 10;
+    const bossHeight = brickHeight * BOSS_SIZE_BRICK_ROWS; // ~234px
+    const bossWidth = bossHeight; // 1:1 соотношение сторон спрайта
 
-    const bossY = arena.top + 28;
-    // Смещаем ряды блоков ниже босса, чтобы оставалось комфортное пространство
-    const startY = bossY + bossHeight + 24;
+    const bossY = arena.top + 16;
+    // Смещаем ряды блоков ниже босса с небольшим зазором
+    const startY = bossY + bossHeight + 20;
     const startX = arena.left + paddingX;
 
     // Защитные блоки свиты босса
@@ -276,8 +277,8 @@ export class LevelManager {
       width: bossWidth,
       height: bossHeight,
       baseX: initialBossX,
-      patrolDistance: 80,       // Амплитуда патрулирования влево/вправо
-      patrolSpeed: 70,          // Скорость патрулирования (px/сек)
+      patrolDistance: 70,       // Амплитуда патрулирования влево/вправо
+      patrolSpeed: 65,          // Скорость патрулирования (px/сек)
       patrolDirection: 1,       // 1 = вправо, -1 = влево
       flashTimer: 0,            // Таймер эффекта вспышки урона
       isDefeated: false

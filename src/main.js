@@ -32,6 +32,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       volumeValue.textContent = isMuted ? 'ВЫКЛ' : `${Math.round(volume * 100)}%`;
     }
     if (muteIcon) {
+      // Для выключенного звука перечеркнутый динамик 🔇, для включенного — 🔉 или 🔊
       muteIcon.textContent = isMuted || volume === 0 ? '🔇' : (volume < 0.4 ? '🔉' : '🔊');
     }
     if (muteBtn) {

@@ -353,6 +353,7 @@ export class MusicManager {
         return `level-${clampedWorld}`;
       }
       case 'VICTORY':
+      case 'CREDITS':
         return 'Ending';
       case 'GAMEOVER':
       case 'LOGO':

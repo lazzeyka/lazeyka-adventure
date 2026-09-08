@@ -23,7 +23,8 @@ export const GameState = Object.freeze({
   PLAYING: 'PLAYING',           // Игровой процесс (Арканоид)
   PAUSED: 'PAUSED',             // Пауза
   GAMEOVER: 'GAMEOVER',         // Поражение
-  VICTORY: 'VICTORY'            // Финальная победа
+  VICTORY: 'VICTORY',           // Финальная победа
+  CREDITS: 'CREDITS'            // Экран финальных титров
 });
 
 export default class Game {
@@ -59,6 +60,14 @@ export default class Game {
 
     // Таймер мигания «Нажмите любую клавишу» на Title
     this.titleBlinkTimer = 0;
+    // Флаг активации главного экрана: до нажатия показывается чистая статичная картинка title-screen.png,
+    // после любого нажатия/клика запускается видео title-screen.mp4 и музыка
+    this.isTitleActivated = false;
+
+    // Экран финальных титров
+    this.creditsScrollY = 0;        // текущая позиция прокрутки (px, увеличивается со временем)
+    this.CREDITS_SCROLL_SPEED = 60; // px/сек — скорость прокрутки (параметр)
+    this.CREDITS_VIDEO_DIM = 0.72;  // [0..1] — сила затемнения видео на экране титров (параметр)
 
     // Прогресс кампании
     this.currentWorld = 1; // 1..4 (Биомы)
@@ -219,6 +228,7 @@ export default class Game {
           }
         });
       } else {
+        // После победы над последним боссом — сначала показываем экран Победы
         this.setState(GameState.VICTORY);
       }
     }
@@ -253,9 +263,12 @@ export default class Game {
     // Управление воспроизведением фонового видео титульного экрана
     const titleVideo = Assets.getVideo('title-screen-video');
     if (titleVideo) {
-      if (newState === GameState.TITLE || newState === GameState.MENU) {
+      const videoActive = (newState === GameState.TITLE && this.isTitleActivated)
+        || newState === GameState.MENU
+        || newState === GameState.CREDITS;
+      if (videoActive) {
         if (titleVideo.paused) {
-          titleVideo.play().catch(() => {});
+          titleVideo.play().catch(() => { });
         }
       } else {
         if (!titleVideo.paused) {
@@ -264,8 +277,26 @@ export default class Game {
       }
     }
 
+    // При переходе на экран титров — сбрасываем прокрутку
+    if (newState === GameState.CREDITS) {
+      this.creditsScrollY = 0;
+    }
+
     // Синхронизация фоновой музыки с новым состоянием игры и биомом
-    MusicManager.syncWithGameState(newState, this.currentWorld);
+    // Если мы на экране TITLE, но игрок еще не нажал кнопку — музыка не играет
+    if (newState === GameState.TITLE && !this.isTitleActivated) {
+      MusicManager.stop(0);
+    } else {
+      MusicManager.syncWithGameState(newState, this.currentWorld);
+    }
+
+    // Управление видимостью надписи над экраном:
+    // «Приключения Лазейки» отображается только во время игры (PLAYING, PAUSED, LEVEL_START)
+    const gameHeader = document.getElementById('gameHeader');
+    if (gameHeader) {
+      const isIngame = (newState === GameState.PLAYING || newState === GameState.PAUSED || newState === GameState.LEVEL_START);
+      gameHeader.classList.toggle('header-hidden', !isIngame);
+    }
 
     if (this.state === GameState.INTRO && params.intro) {
       this.introData = { ...this.introData, ...params.intro };
@@ -323,6 +354,12 @@ export default class Game {
   setupInputListeners() {
     window.addEventListener('keydown', (e) => {
       MusicManager.unlock();
+
+      // Если мы на экране TITLE в статичном режиме — любое нажатие клавиши активирует видео и музыку
+      if (this.state === GameState.TITLE && !this.isTitleActivated) {
+        this.activateTitleScreen();
+        return;
+      }
 
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.keys.left = true;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') this.keys.right = true;
@@ -382,8 +419,30 @@ export default class Game {
 
     this.canvas.addEventListener('click', () => {
       MusicManager.unlock();
+      if (this.state === GameState.TITLE && !this.isTitleActivated) {
+        this.activateTitleScreen();
+        return;
+      }
       this.handleActionKey();
     });
+  }
+
+  /**
+   * Активация титульного экрана по первому действию пользователя
+   */
+  activateTitleScreen() {
+    this.isTitleActivated = true;
+    SoundManager.playUiClick();
+
+    // Запуск фонового видео
+    const titleVideo = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
+    if (titleVideo) {
+      titleVideo.currentTime = 0;
+      titleVideo.play().catch(() => { });
+    }
+
+    // Запуск фоновой музыки титульного экрана
+    MusicManager.syncWithGameState(GameState.TITLE, this.currentWorld, 0.6);
   }
 
   /**
@@ -399,12 +458,24 @@ export default class Game {
         this.setState(GameState.TITLE);
         break;
       case GameState.TITLE:
-        SoundManager.playUiClick();
-        this.setState(GameState.MENU);
+        if (!this.isTitleActivated) {
+          this.activateTitleScreen();
+        } else {
+          SoundManager.playUiClick();
+          this.setState(GameState.MENU);
+        }
         break;
       case GameState.MENU:
         SoundManager.playUiClick();
-        this.setState(GameState.INTRO);
+        // Сбрасываем прогресс кампании перед новой игрой (на случай возврата с Game Over)
+        this.resetGame();
+        this.setState(GameState.INTRO, {
+          intro: {
+            speaker: BIOMES_DATA[1].intro.speaker,
+            text: BIOMES_DATA[1].intro.text,
+            biomeTitle: BIOMES_DATA[1].intro.title
+          }
+        });
         break;
       case GameState.INTRO:
       case GameState.LEVEL_START:
@@ -418,9 +489,21 @@ export default class Game {
         }
         break;
       case GameState.GAMEOVER:
-      case GameState.VICTORY:
+        // После Game Over — возврат на главный (титульный) экран
         SoundManager.playUiClick();
-        this.setState(GameState.PLAYING, { reset: true });
+        this.isTitleActivated = false;
+        this.setState(GameState.TITLE);
+        break;
+      case GameState.VICTORY:
+        // После экрана Победы — запуск финальных титров
+        SoundManager.playUiClick();
+        this.setState(GameState.CREDITS);
+        break;
+      case GameState.CREDITS:
+        // Нажатие пробела/клика на титрах — возврат на главный экран
+        SoundManager.playUiClick();
+        this.isTitleActivated = false;
+        this.setState(GameState.TITLE);
         break;
       case GameState.PAUSED:
         SoundManager.playPauseOut();
@@ -478,6 +561,8 @@ export default class Game {
       this.updateLogo(dt);
     } else if (this.state === GameState.TITLE) {
       this.titleBlinkTimer += dt;
+    } else if (this.state === GameState.CREDITS) {
+      this.updateCredits(dt);
     } else if (this.state === GameState.PLAYING) {
       this.updatePlaying(dt);
     }
@@ -727,6 +812,9 @@ export default class Game {
         this.renderPlaying();
         this.renderVictoryOverlay();
         break;
+      case GameState.CREDITS:
+        this.renderCredits();
+        break;
     }
   }
 
@@ -817,7 +905,7 @@ export default class Game {
   }
 
   renderBoss(ctx) {
-    const { x, y, width, height, hp, maxHp, flashTimer, world, name } = this.boss;
+    const { x, y, width, height, flashTimer, world } = this.boss;
 
     ctx.save();
 
@@ -826,26 +914,23 @@ export default class Game {
 
     if (bossImg) {
       if (flashTimer > 0) {
-        // Эффект вспышки при получении урона:
-        // Рисуем спрайт босса, затем накладываем ярко-красный оттенок через 'source-atop'
+        // Эффект вспышки строго по непрозрачным пикселям текстуры (без прямоугольной рамки):
         const offscreen = document.createElement('canvas');
         offscreen.width = width;
         offscreen.height = height;
         const offCtx = offscreen.getContext('2d');
         offCtx.imageSmoothingEnabled = false;
 
+        // Рисуем базовый спрайт
         offCtx.drawImage(bossImg, 0, 0, width, height);
 
+        // Накладываем красный цвет ТОЛЬКО по существующим непрозрачным пикселям
         offCtx.globalCompositeOperation = 'source-atop';
-        offCtx.fillStyle = 'rgba(239, 68, 68, 0.75)'; // Яркий алый цвет урона
+        offCtx.fillStyle = 'rgba(239, 68, 68, 0.85)';
         offCtx.fillRect(0, 0, width, height);
 
+        ctx.imageSmoothingEnabled = false;
         ctx.drawImage(offscreen, x, y);
-
-        // Дополнительное красное свечение вокруг спрайта при ударе
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x - 2, y - 2, width + 4, height + 4);
       } else {
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(bossImg, x, y, width, height);
@@ -854,43 +939,7 @@ export default class Game {
       // Запасной вариант (фоллбек), если изображение еще не подгрузилось
       ctx.fillStyle = flashTimer > 0 ? '#ef4444' : '#7f1d1d';
       ctx.fillRect(x, y, width, height);
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x, y, width, height);
     }
-
-    // 2. Индикатор здоровья (HP Bar) над боссом
-    const barW = Math.max(120, width);
-    const barH = 10;
-    const barX = x + (width - barW) / 2;
-    const barY = Math.max(this.arena.top + 10, y - 18);
-
-    // Подложка полосы HP
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(barX, barY, barW, barH);
-
-    const fillRatio = Math.max(0, Math.min(1, hp / maxHp));
-    // Цвет индикатора: зеленый -> желтый -> красный
-    let barColor = '#22c55e';
-    if (fillRatio < 0.3) {
-      barColor = '#ef4444';
-    } else if (fillRatio < 0.6) {
-      barColor = '#eab308';
-    }
-
-    ctx.fillStyle = barColor;
-    ctx.fillRect(barX + 1, barY + 1, (barW - 2) * fillRatio, barH - 2);
-
-    // Рамка полосы HP
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(barX, barY, barW, barH);
-
-    // Текст имени босса над полосой HP (если помещается) или на полосе
-    ctx.fillStyle = '#fef08a';
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${name || 'БОСС'} [${hp}/${maxHp}]`, barX + barW / 2, barY - 4);
 
     ctx.restore();
   }
@@ -922,74 +971,119 @@ export default class Game {
     const { ctx, width } = this;
     const biome = LevelManager.getBiomeData(this.currentWorld);
 
-    // Левая панель
+    // =========================================================================
+    // ПАРАМЕТР ШРИФТА БОКОВЫХ ПАНЕЛЕЙ:
+    // Изменяйте HUD_FONT_SIZE для масштабирования всего текста на боковых панелях
+    // =========================================================================
+    const HUD_FONT_SIZE = 13; // Базовый единый размер шрифта для всех надписей в панелях
+    const hudFontRegular = `${HUD_FONT_SIZE}px "Press Start 2P", monospace`;
+    const hudFontBold = `bold ${HUD_FONT_SIZE}px "Press Start 2P", monospace`;
+    const lineGap = HUD_FONT_SIZE + 10; // Отступ между строками
+
+    // -------------------------------------------------------------------------
+    // ЛЕВАЯ ПАНЕЛЬ
+    // -------------------------------------------------------------------------
     const leftX = 40;
     ctx.textAlign = 'left';
 
+    // 1. СЧЕТ
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.font = hudFontRegular;
     ctx.fillText('СЧЕТ', leftX, 70);
 
     ctx.fillStyle = '#fbbf24';
-    ctx.font = '18px "Press Start 2P", monospace';
-    ctx.fillText(`${this.score}`, leftX, 98);
+    ctx.font = hudFontBold;
+    ctx.fillText(`${this.score}`, leftX, 70 + lineGap);
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('ЛОКАЦИЯ', leftX, 160);
-
+    // 2. БИОМ И НАЗВАНИЕ (без надписи "ЛОКАЦИЯ")
+    const biomeStartY = 160;
     ctx.fillStyle = '#38bdf8';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.fillText(`БИОМ ${this.currentWorld}`, leftX, 188);
+    ctx.font = hudFontBold;
+    ctx.fillText(`БИОМ ${this.currentWorld}`, leftX, biomeStartY);
 
     ctx.fillStyle = '#f8fafc';
-    ctx.font = '9px "Press Start 2P", monospace';
-    this.renderWrappedText(biome.name, leftX, 212, 220, 18);
+    ctx.font = hudFontRegular;
+    this.renderWrappedText(biome.name, leftX, biomeStartY + lineGap, 220, HUD_FONT_SIZE + 6);
 
     ctx.fillStyle = '#34d399';
-    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.font = hudFontRegular;
     const sublevelTitle = LevelManager.getSublevelTitle(this.currentWorld, this.currentLevel);
-    this.renderWrappedText(sublevelTitle, leftX, 260, 220, 16);
+    this.renderWrappedText(sublevelTitle, leftX, biomeStartY + lineGap * 2.2, 220, HUD_FONT_SIZE + 6);
 
+    // 3. СЛОЖНОСТЬ (вместо "РЕЖИМ")
+    const diffStartY = 330;
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('РЕЖИМ', leftX, 330);
+    ctx.font = hudFontRegular;
+    ctx.fillText('СЛОЖНОСТЬ', leftX, diffStartY);
 
     ctx.fillStyle = this.difficulty === Difficulty.HARDCORE ? '#ef4444' : '#22c55e';
-    ctx.font = '11px "Press Start 2P", monospace';
-    ctx.fillText(this.difficultySettings.name, leftX, 356);
+    ctx.font = hudFontBold;
+    ctx.fillText(this.difficultySettings.name, leftX, diffStartY + lineGap);
 
-    // Правая панель
+    // -------------------------------------------------------------------------
+    // ПРАВАЯ ПАНЕЛЬ
+    // -------------------------------------------------------------------------
     const rightX = width - 40;
     ctx.textAlign = 'right';
 
+    // 1. ЖИЗНИ
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.font = hudFontRegular;
     ctx.fillText('ЖИЗНИ', rightX, 70);
 
     ctx.fillStyle = '#ef4444';
-    ctx.font = '15px "Press Start 2P", monospace';
+    ctx.font = hudFontBold;
     const hearts = '❤️ '.repeat(Math.max(0, this.lives));
-    ctx.fillText(hearts || '☠️', rightX, 98);
+    ctx.fillText(hearts || '☠️', rightX, 70 + lineGap);
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('УРОВЕНЬ', rightX, 160);
+    // (Надпись "УРОВЕНЬ Х-Х" удалена)
 
-    ctx.fillStyle = '#34d399';
-    ctx.font = '16px "Press Start 2P", monospace';
-    ctx.fillText(`${this.currentWorld}-${this.currentLevel}`, rightX, 190);
+    // 2. БОСС И ПОЛОСКА HP (на уровне середины экрана, без имени и цифр HP)
+    if (this.boss && !this.boss.isDefeated) {
+      const bossPanelW = 210;
+      const bossPanelX = width - 40 - bossPanelW;
+      const bossCenterY = 360; // Примерно середина экрана по высоте (высота холста 720)
 
-    // Чит-подсказки
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f87171';
+      ctx.font = hudFontBold;
+      ctx.fillText('БОСС', rightX, bossCenterY);
+
+      // Полоса здоровья (без имени и цифр HP)
+      const barH = 14;
+      const barY = bossCenterY + 14;
+
+      // Фон полосы
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(bossPanelX, barY, bossPanelW, barH);
+
+      const fillRatio = Math.max(0, Math.min(1, this.boss.hp / this.boss.maxHp));
+      let barColor = '#22c55e';
+      if (fillRatio < 0.3) {
+        barColor = '#ef4444';
+      } else if (fillRatio < 0.6) {
+        barColor = '#eab308';
+      }
+
+      ctx.fillStyle = barColor;
+      ctx.fillRect(bossPanelX + 1, barY + 1, Math.max(0, (bossPanelW - 2) * fillRatio), barH - 2);
+
+      // Рамка полосы HP
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bossPanelX, barY, bossPanelW, barH);
+    }
+    // Подсказка управления движением
     ctx.fillStyle = '#64748b';
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('[C] ЧИТ: ОЧИСТИТЬ ПОЛЕ', leftX, 640);
-    ctx.fillText('[H] СМЕНА СЛОЖНОСТИ', leftX, 662);
-
+    ctx.font = hudFontRegular;
     ctx.textAlign = 'right';
-    ctx.fillText('[L] +1 ЖИЗНЬ  [N] СЛЕД. УРОВЕНЬ', rightX, 640);
-    ctx.fillText('[P] ПАУЗА', rightX, 662);
+    ctx.fillText('A / D — ДВИЖЕНИЕ', rightX, 638);
+
+    // 3. Подсказка внизу: только ESC — ПАУЗА (описание читов убрано, читы активны)
+    ctx.fillStyle = '#64748b';
+    ctx.font = hudFontRegular;
+    ctx.textAlign = 'right';
+    ctx.fillText('ESC — ПАУЗА', rightX, 662);
   }
 
   /**
@@ -998,8 +1092,8 @@ export default class Game {
   renderLogo() {
     const { ctx, width, height } = this;
 
-    // Чёрный фон
-    ctx.fillStyle = '#000000';
+    // Белый фон для экрана логотипа
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
     const logo = Assets.getImage('intro-logo');
@@ -1026,13 +1120,51 @@ export default class Game {
   renderTitle() {
     const { ctx, width, height } = this;
 
-    // Фоновое видео title-screen.mp4 (с фолбэком на картинку title-screen-bg или сплошной фон)
+    // 1. Если экран еще не активирован (до нажатия клавиши или клика):
+    // Отображаем чистую статичную картинку title-screen.png БЕЗ какого-либо затемнения
+    if (!this.isTitleActivated) {
+      const bg = Assets.getImage('title-screen-bg') || Assets.getImage('title-screen.png');
+      if (bg) {
+        ctx.drawImage(bg, 0, 0, width, height);
+      } else {
+        ctx.fillStyle = '#05070f';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // Текст названия игры и подсказка для старта
+      const pulse = Math.sin(this.titleBlinkTimer * 1.4) * 0.5 + 0.5; // 0..1
+      const r = Math.round(251 + (255 - 251) * pulse);
+      const g = Math.round(191 + (215 - 191) * pulse);
+      const b = Math.round(36 + (0 - 36) * pulse);
+
+      ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.75)`;
+      ctx.shadowBlur = 24 + pulse * 12;
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.font = '40px "Press Start 2P", monospace';
+      ctx.fillText('ПРИКЛЮЧЕНИЯ', width / 2, height / 2 - 55);
+      ctx.fillText('ЛАЗЕЙКИ', width / 2, height / 2 + 15);
+
+      ctx.shadowBlur = 0;
+
+      // Мигающая подсказка о начале игры
+      const blinkVisible = Math.floor(this.titleBlinkTimer * 1.8) % 2 === 0;
+      if (blinkVisible) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '12px "Press Start 2P", monospace';
+        ctx.fillText('НАЖМИТЕ ЛЮБУЮ КЛАВИШУ', width / 2, height / 2 + 100);
+      }
+      return;
+    }
+
+    // 2. После клика / нажатия: запускается фоновое видео title-screen.mp4
     const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
     let hasBg = false;
 
     if (video) {
       if (video.paused) {
-        video.play().catch(() => {});
+        video.play().catch(() => { });
       }
       if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, width, height);
@@ -1041,17 +1173,14 @@ export default class Game {
     }
 
     if (!hasBg) {
-      const bg = Assets.getImage('title-screen-bg');
+      const bg = Assets.getImage('title-screen-bg') || Assets.getImage('title-screen.png');
       if (bg) {
         ctx.drawImage(bg, 0, 0, width, height);
         hasBg = true;
       }
     }
 
-    if (hasBg) {
-      ctx.fillStyle = 'rgba(5, 7, 15, 0.55)';
-      ctx.fillRect(0, 0, width, height);
-    } else {
+    if (!hasBg) {
       ctx.fillStyle = '#05070f';
       ctx.fillRect(0, 0, width, height);
     }
@@ -1074,12 +1203,12 @@ export default class Game {
 
     ctx.shadowBlur = 0;
 
-    // Мигающая надпись «Нажмите любую клавишу»
+    // Мигающая надпись «Нажмите пробел для продолжения»
     const blinkVisible = Math.floor(this.titleBlinkTimer * 1.8) % 2 === 0;
     if (blinkVisible) {
       ctx.fillStyle = '#f8fafc';
       ctx.font = '12px "Press Start 2P", monospace';
-      ctx.fillText('НАЖМИТЕ ЛЮБУЮ КЛАВИШУ', width / 2, height / 2 + 100);
+      ctx.fillText('НАЖМИТЕ ПРОБЕЛ', width / 2, height / 2 + 100);
     }
   }
 
@@ -1091,7 +1220,7 @@ export default class Game {
 
     if (video) {
       if (video.paused) {
-        video.play().catch(() => {});
+        video.play().catch(() => { });
       }
       if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, width, height);
@@ -1115,22 +1244,42 @@ export default class Game {
       ctx.fillRect(0, 0, width, height);
     }
 
+    // =========================================================================
+    // ПАРАМЕТРЫ РАЗМЕРА ШРИФТОВ МЕНЮ ВЫБОРА СЛОЖНОСТИ:
+    // MENU_FONT_BASE - базовый размер шрифта для элементов меню (увеличен)
+    // =========================================================================
+    const MENU_FONT_BASE = 16; // Было 12-13px. Можно менять (например, 14..20)
+    const titleSize = Math.round(MENU_FONT_BASE * 1.85); // ~30px
+    const subSize = Math.round(MENU_FONT_BASE * 0.95);   // ~15px
+    const diffSize = MENU_FONT_BASE;                     // ~16px
+    const actionSize = Math.round(MENU_FONT_BASE * 1.15); // ~18px
+
     ctx.textAlign = 'center';
+
+    // Заголовок игры
     ctx.fillStyle = '#fbbf24';
-    ctx.font = '28px "Press Start 2P", monospace';
-    ctx.fillText('ПРИКЛЮЧЕНИЯ ЛАЗЕЙКИ', width / 2, height / 2 - 80);
+    ctx.font = `${titleSize}px "Press Start 2P", monospace`;
+    ctx.fillText('ПРИКЛЮЧЕНИЯ ЛАЗЕЙКИ', width / 2, height / 2 - 95);
 
+    // Подзаголовок кампании
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '13px "Press Start 2P", monospace';
-    ctx.fillText('КАМПАНИЯ: 4 БИОМА И БОССЫ', width / 2, height / 2 - 30);
+    ctx.font = `${subSize}px "Press Start 2P", monospace`;
+    ctx.fillText('КАМПАНИЯ: 4 БИОМА И БОССЫ', width / 2, height / 2 - 35);
 
+    // Выбор сложности
     ctx.fillStyle = this.difficulty === Difficulty.HARDCORE ? '#ef4444' : '#22c55e';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.fillText(`СЛОЖНОСТЬ: ${this.difficultySettings.name} (НАЖМИТЕ H ДЛЯ СМЕНЫ)`, width / 2, height / 2 + 20);
+    ctx.font = `bold ${diffSize}px "Press Start 2P", monospace`;
+    ctx.fillText(`СЛОЖНОСТЬ: ${this.difficultySettings.name}`, width / 2, height / 2 + 22);
 
+    // Подсказка по смене сложности
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = `${Math.round(MENU_FONT_BASE * 0.75)}px "Press Start 2P", monospace`;
+    ctx.fillText('(НАЖМИТЕ H ДЛЯ СМЕНЫ)', width / 2, height / 2 + 50);
+
+    // Кнопка начала игры
     ctx.fillStyle = '#38bdf8';
-    ctx.font = '15px "Press Start 2P", monospace';
-    ctx.fillText('НАЖМИТЕ ПРОБЕЛ ДЛЯ НАЧАЛА', width / 2, height / 2 + 80);
+    ctx.font = `${actionSize}px "Press Start 2P", monospace`;
+    ctx.fillText('НАЖМИТЕ ПРОБЕЛ ДЛЯ НАЧАЛА', width / 2, height / 2 + 105);
   }
 
   /**
@@ -1293,7 +1442,7 @@ export default class Game {
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#34d399';
-    ctx.font = '28px "Press Start 2P", monospace';
+    ctx.font = '48px "Press Start 2P", monospace';
     ctx.fillText('ПОБЕДА!', width / 2, height / 2 - 40);
 
     ctx.fillStyle = '#fbbf24';
@@ -1303,7 +1452,129 @@ export default class Game {
     ctx.fillStyle = '#f8fafc';
     ctx.font = '12px "Press Start 2P", monospace';
     ctx.fillText('ЛАЗЕЙКА НАШЛА ВЫХОД И ВСЕ СОКРОВИЩА!', width / 2, height / 2 + 40);
-    ctx.fillText('НАЖМИТЕ ПРОБЕЛ ДЛЯ НОВОЙ ИГРЫ', width / 2, height / 2 + 75);
+    ctx.fillText('НАЖМИТЕ ПРОБЕЛ', width / 2, height / 2 + 75);
+  }
+
+  // =========================================================================
+  // ЭКРАН ФИНАЛЬНЫХ ТИТРОВ
+  // =========================================================================
+
+  /**
+   * Строки титров (текст выравнивается по центру)
+   * @private
+   */
+  get _creditsLines() {
+    return [
+      { text: 'НАД ИГРОЙ РАБОТАЛИ', style: 'header' },
+      { text: '', style: 'spacer' },
+      { text: 'ГЕЙМДИЗАЙН И СЮЖЕТ:', style: 'label' },
+      { text: 'АРТЁМ КОЗОРИЗ', style: 'value' },
+      { text: '', style: 'spacer' },
+      { text: 'РАЗРАБОТКА И КОД:', style: 'label' },
+      { text: 'АРТЁМ КОЗОРИЗ / GOOGLE ANTIGRAVITY', style: 'value' },
+      { text: '', style: 'spacer' },
+      { text: 'ГРАФИКА И АНИМАЦИЯ:', style: 'label' },
+      { text: 'АРТЁМ КОЗОРИЗ / GOOGLE GEMINI', style: 'value' },
+      { text: '', style: 'spacer' },
+      { text: 'ЗВУК И МУЗЫКА:', style: 'label' },
+      { text: 'JUHANI JUNKALA', style: 'value' },
+      { text: '', style: 'spacer' },
+      { text: '', style: 'spacer' },
+      { text: 'СДЕЛАНО В ЛАЙФХАКЕРЕ В 2026 ГОДУ', style: 'footer' },
+      { text: '', style: 'spacer' },
+      { text: 'LIFEHACKER.RU', style: 'site' },
+    ];
+  }
+
+  /**
+   * Обновление позиции прокрутки титров
+   * @param {number} dt - дельта времени (сек)
+   */
+  updateCredits(dt) {
+    const lineHeight = 52; // высота строки в пикселях
+    const totalHeight = this._creditsLines.length * lineHeight + this.height;
+    this.creditsScrollY += this.CREDITS_SCROLL_SPEED * dt;
+    // После полной прокрутки — остановиться
+    if (this.creditsScrollY > totalHeight) {
+      this.creditsScrollY = totalHeight;
+    }
+  }
+
+  /**
+   * Отрисовка финальных титров:
+   * притемнённое видео title-screen.mp4 в качестве фона + прокручивающийся текст
+   */
+  renderCredits() {
+    const { ctx, width, height } = this;
+
+    // 1. Фоновое видео (то же, что и на Title-экране)
+    const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
+    if (video) {
+      if (video.paused) video.play().catch(() => { });
+      if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, width, height);
+      }
+    } else {
+      ctx.fillStyle = '#0a0d18';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // 2. Затемнение поверх видео (CREDITS_VIDEO_DIM — параметр)
+    ctx.fillStyle = `rgba(0, 0, 20, ${this.CREDITS_VIDEO_DIM})`;
+    ctx.fillRect(0, 0, width, height);
+
+    // 3. Прокручивающийся текст
+    ctx.save();
+    ctx.textAlign = 'center';
+
+    const lines = this._creditsLines;
+    const lineHeight = 52;
+    // Начало первой строки: снизу холста → проматывается вверх
+    const startY = height - this.creditsScrollY;
+
+    lines.forEach((line, i) => {
+      const y = startY + i * lineHeight;
+      // Не рисуем строки, которые вышли за пределы экрана
+      if (y < -60 || y > height + 60) return;
+
+      switch (line.style) {
+        case 'header':
+          ctx.font = 'bold 26px "Press Start 2P", monospace';
+          ctx.fillStyle = '#fbbf24';  // золотой
+          break;
+        case 'label':
+          ctx.font = '14px "Press Start 2P", monospace';
+          ctx.fillStyle = '#94a3b8';  // серый
+          break;
+        case 'value':
+          ctx.font = 'bold 16px "Press Start 2P", monospace';
+          ctx.fillStyle = '#f1f5f9';  // белый
+          break;
+        case 'footer':
+          ctx.font = '13px "Press Start 2P", monospace';
+          ctx.fillStyle = '#64748b';  // тёмно-серый
+          break;
+        case 'site':
+          ctx.font = 'bold 18px "Press Start 2P", monospace';
+          ctx.fillStyle = '#38bdf8';  // голубой
+          break;
+        default:
+          // spacer — пустая строка, пропускаем
+          return;
+      }
+      ctx.fillText(line.text, width / 2, y);
+    });
+
+    ctx.restore();
+
+    // 4. Подсказка внизу экрана
+    const hintAlpha = Math.abs(Math.sin(performance.now() * 0.001));
+    ctx.globalAlpha = hintAlpha * 0.7 + 0.3;
+    ctx.textAlign = 'center';
+    ctx.font = '11px "Press Start 2P", monospace';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('НАЖМИТЕ ПРОБЕЛ ИЛИ КЛИКНИТЕ ДЛЯ ВЫХОДА', width / 2, height - 24);
+    ctx.globalAlpha = 1;
   }
 
   renderWrappedText(text, x, y, maxWidth, lineHeight) {
