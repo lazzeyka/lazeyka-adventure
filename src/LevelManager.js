@@ -46,6 +46,7 @@ export const BIOMES_DATA = Object.freeze({
     id: 'jungle',
     name: 'ДИКИЕ ДЖУНГЛИ',
     bgKey: 'w-1-jungle',
+    fallbackColors: { top: '#081710', bottom: '#030805', arena: '#09150d' },
     sublevels: ['Вход в Чащу', 'Древние Руины', 'Тотем Джунглей'],
     intro: {
       speaker: 'Лазейка',
@@ -58,6 +59,7 @@ export const BIOMES_DATA = Object.freeze({
     id: 'cave',
     name: 'ЗАБРОШЕННАЯ ШАХТА',
     bgKey: 'w-2-cave',
+    fallbackColors: { top: '#12141f', bottom: '#06070b', arena: '#0e1018' },
     sublevels: ['Штреки и Кристаллы', 'Глубокие Шурфы', 'Шахтный Бур'],
     intro: {
       speaker: 'Лазейка',
@@ -70,6 +72,7 @@ export const BIOMES_DATA = Object.freeze({
     id: 'mountains',
     name: 'ЛЕДЯНЫЕ ПИКИ',
     bgKey: 'w-3-mountains',
+    fallbackColors: { top: '#0e1c2e', bottom: '#050a12', arena: '#0b1624' },
     sublevels: ['Ледяной Мост', 'Замерзшая Цитадель', 'Ледяной Страж'],
     intro: {
       speaker: 'Лазейка',
@@ -82,6 +85,7 @@ export const BIOMES_DATA = Object.freeze({
     id: 'treasury',
     name: 'СОКРОВИЩНИЦА',
     bgKey: 'w-4-treasury',
+    fallbackColors: { top: '#211322', bottom: '#090509', arena: '#170d18' },
     sublevels: ['Тронный Зал', 'Хранилище Золота', 'Хранитель Доспех'],
     intro: {
       speaker: 'Лазейка',

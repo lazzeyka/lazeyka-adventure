@@ -1,11 +1,12 @@
 /**
  * SoundManager.js
- * Менеджер звуковых эффектов (SFX) для игры «Приключения Лазейки».
+ * Оптимизированный менеджер звуковых эффектов (SFX) для игры «Приключения Лазейки».
  * Особенности:
- * - Пул аудио-элементов для каждого звука (одновременное воспроизведение без обрывов)
- * - Троттлинг одинаковых звуков (предотвращение перегрузки и клиппинга при массовом разрушении блоков)
+ * - Основной движок: Web Audio API (AudioBufferSourceNode) для мгновенного воспроизведения без заиканий
+ * - Отсутствие накладных расходов сборщика мусора и клонирования DOM-элементов
+ * - Троттлинг одинаковых звуков (предотвращение клиппинга при массовом разрушении блоков)
  * - Учет глобального уровня громкости и режима Mute из MusicManager
- * - Защита от ошибок воспроизведения и строгой политики браузеров
+ * - Graceful fallback на HTMLAudioElement в случае недоступности Web Audio
  */
 
 import Assets from './Assets.js';
@@ -14,10 +15,6 @@ import { BrickType } from './Brick.js';
 
 export class SoundManager {
   constructor() {
-    /** @type {Map<string, HTMLAudioElement[]>} */
-    this.pools = new Map();
-    this.poolSize = 5;
-
     /** @type {Map<string, number>} */
     this.lastPlayTime = new Map();
 
@@ -38,62 +35,32 @@ export class SoundManager {
       boss_death: 1.0,
       level_win: 1.0
     };
+
+    // Фолбек-пулы HTMLAudioElement на случай отсутствия AudioBuffer
+    /** @type {Map<string, HTMLAudioElement[]>} */
+    this.fallbackPools = new Map();
+    this.fallbackPoolSize = 3;
+
+    // Разблокировка AudioContext при первом жесте
+    this._setupUnlock();
   }
 
-  /**
-   * Получить свободный или наименее активный аудио-элемент из пула
-   * @param {string} soundId
-   * @returns {HTMLAudioElement|null}
-   */
-  _getAudioFromPool(soundId) {
-    if (!this.pools.has(soundId)) {
-      this.pools.set(soundId, []);
-    }
-
-    const pool = this.pools.get(soundId);
-
-    // 1. Ищем уже завершивший воспроизведение элемент
-    for (const audio of pool) {
-      if (audio.paused || audio.ended) {
-        return audio;
+  _setupUnlock() {
+    const unlock = () => {
+      const ctx = Assets.getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
       }
-    }
+      window.removeEventListener('click', unlock, true);
+      window.removeEventListener('keydown', unlock, true);
+      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('touchstart', unlock, true);
+    };
 
-    // 2. Если пул еще не заполнен, получаем из предзагруженного Assets или создаем
-    if (pool.length < this.poolSize) {
-      let baseAudio = null;
-      try {
-        if (Assets) {
-          if (typeof Assets.getSound === 'function') {
-            baseAudio = Assets.getSound(soundId);
-          } else if (typeof Assets.getSFX === 'function') {
-            baseAudio = Assets.getSFX(soundId);
-          } else if (Assets.sounds && typeof Assets.sounds.get === 'function') {
-            baseAudio = Assets.sounds.get(soundId);
-          }
-        }
-      } catch (e) {
-        baseAudio = null;
-      }
-
-      let newAudio = null;
-      if (baseAudio && typeof baseAudio.cloneNode === 'function') {
-        newAudio = baseAudio.cloneNode(true);
-      } else {
-        const cleanName = soundId.replace(/\.wav$/, '');
-        newAudio = new Audio(`assets/audio/sfx/${cleanName}.wav`);
-      }
-
-      newAudio.preload = 'auto';
-      pool.push(newAudio);
-      return newAudio;
-    }
-
-    // 3. Если все заняты, берем самый старый и перезапускаем его
-    const oldestAudio = pool[0];
-    // Перемещаем в конец пула (round-robin)
-    pool.push(pool.shift());
-    return oldestAudio;
+    window.addEventListener('click', unlock, { once: true, capture: true });
+    window.addEventListener('keydown', unlock, { once: true, capture: true });
+    window.addEventListener('pointerdown', unlock, { once: true, capture: true });
+    window.addEventListener('touchstart', unlock, { once: true, capture: true });
   }
 
   /**
@@ -118,26 +85,79 @@ export class SoundManager {
     }
     this.lastPlayTime.set(soundId, now);
 
-    try {
-      const audio = this._getAudioFromPool(soundId);
-      if (!audio) return;
+    const masterVol = MusicManager.getVolume();
+    const balance = this.volumeBalances[soundId] !== undefined ? this.volumeBalances[soundId] : 1.0;
+    const effectiveVol = Math.max(0, Math.min(1, masterVol * balance * volume));
 
-      const masterVol = MusicManager.getVolume();
-      const balance = this.volumeBalances[soundId] !== undefined ? this.volumeBalances[soundId] : 1.0;
-      const effectiveVol = Math.max(0, Math.min(1, masterVol * balance * volume));
+    if (effectiveVol <= 0.001) return;
 
-      audio.volume = effectiveVol;
-      audio.currentTime = 0;
+    // 1. Попытка воспроизведения через сверхбыстрый Web Audio API
+    const audioCtx = Assets.getAudioContext();
+    const buffer = Assets.getSoundBuffer(soundId);
 
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Игнорируем ошибки автовоспроизведения или прерывания браузером
-        });
+    if (audioCtx && buffer) {
+      try {
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(effectiveVol, audioCtx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        source.start(0);
+        return;
+      } catch (err) {
+        console.warn(`[SoundManager WebAudio] Ошибка при воспроизведении "${soundId}":`, err.message);
       }
-    } catch (err) {
-      // Защита: ни одна ошибка аудио не должна прерывать работу игры
-      console.warn(`[SoundManager] Ошибка при воспроизведении "${soundId}":`, err.message);
+    }
+
+    // 2. Резервное воспроизведение через HTMLAudioElement пул
+    this._playFallback(soundId, effectiveVol);
+  }
+
+  /**
+   * Резервное воспроизведение через HTMLAudioElement
+   * @private
+   */
+  _playFallback(soundId, effectiveVol) {
+    try {
+      if (!this.fallbackPools.has(soundId)) {
+        this.fallbackPools.set(soundId, []);
+      }
+      const pool = this.fallbackPools.get(soundId);
+
+      let audio = pool.find(a => a.paused || a.ended);
+      if (!audio && pool.length < this.fallbackPoolSize) {
+        const baseAudio = Assets.getSound(soundId);
+        if (baseAudio && typeof baseAudio.cloneNode === 'function') {
+          audio = baseAudio.cloneNode(true);
+        } else {
+          const cleanName = soundId.replace(/\.wav$/, '');
+          audio = new Audio(`assets/audio/sfx/${cleanName}.wav`);
+        }
+        audio.preload = 'auto';
+        pool.push(audio);
+      } else if (!audio) {
+        audio = pool[0];
+        pool.push(pool.shift());
+      }
+
+      if (audio) {
+        audio.volume = effectiveVol;
+        audio.currentTime = 0;
+        const p = audio.play();
+        if (p !== undefined) {
+          p.catch(() => {});
+        }
+      }
+    } catch (e) {
+      // Игнорируем ошибки резервного воспроизведения
     }
   }
 

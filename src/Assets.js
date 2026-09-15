@@ -1,6 +1,7 @@
 /**
  * Assets.js
- * Модуль предварительной загрузки игровых ресурсов (изображения, музыка, звуки).
+ * Модуль предварительной загрузки игровых ресурсов (изображения, видео, музыка, звуки).
+ * Включает строгий прелоадер и Web Audio API декодирование для SFX.
  */
 
 class AssetsManager {
@@ -8,8 +9,24 @@ class AssetsManager {
     this.images = new Map();
     this.music = new Map();
     this.videos = new Map();
-    this.sounds = new Map();
+    this.sounds = new Map();         // HTMLAudioElement (fallback)
+    this.soundBuffers = new Map();   // Web Audio API AudioBuffer (первостепенный для SFX)
+    this.audioContext = null;
     this.loaded = false;
+  }
+
+  /**
+   * Получить общий или создать новый AudioContext
+   * @returns {AudioContext|null}
+   */
+  getAudioContext() {
+    if (!this.audioContext) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.audioContext = new AudioCtx();
+      }
+    }
+    return this.audioContext;
   }
 
   /**
@@ -65,14 +82,23 @@ class AssetsManager {
   }
 
   /**
-   * Загрузка отдельного изображения
+   * Загрузка отдельного изображения с поддержкой decode()
    * @param {string} src
    * @returns {Promise<HTMLImageElement>}
    */
   _loadImage(src) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload = async () => {
+        try {
+          if (typeof img.decode === 'function') {
+            await img.decode();
+          }
+        } catch (e) {
+          // decode() может выбросить ошибку на некоторых форматах, но onload уже сработал
+        }
+        resolve(img);
+      };
       img.onerror = (err) => reject(new Error(`Не удалось загрузить изображение: ${src}`));
       img.src = src;
     });
@@ -121,15 +147,14 @@ class AssetsManager {
       video.addEventListener('loadeddata', onReady, { once: true });
       video.addEventListener('error', onError, { once: true });
 
-      // Таймаут на случай задержки загрузки
+      // Предохранительный таймаут
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
           cleanup();
-          video.play().catch(() => {});
           resolve(video);
         }
-      }, 4000);
+      }, 5000);
 
       video.src = src;
       video.load();
@@ -137,7 +162,7 @@ class AssetsManager {
   }
 
   /**
-   * Загрузка отдельного аудиофайла
+   * Загрузка музыкального аудиофайла (HTMLAudioElement)
    * @param {string} src
    * @returns {Promise<HTMLAudioElement>}
    */
@@ -148,6 +173,7 @@ class AssetsManager {
 
       const cleanup = () => {
         audio.removeEventListener('canplaythrough', onReady);
+        audio.removeEventListener('canplay', onReady);
         audio.removeEventListener('loadeddata', onReady);
         audio.removeEventListener('error', onError);
       };
@@ -169,17 +195,17 @@ class AssetsManager {
       };
 
       audio.addEventListener('canplaythrough', onReady, { once: true });
+      audio.addEventListener('canplay', onReady, { once: true });
       audio.addEventListener('loadeddata', onReady, { once: true });
       audio.addEventListener('error', onError, { once: true });
-      
-      // Таймаут на случай непредвиденных проблем с автовоспроизведением браузера
+
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
           cleanup();
           resolve(audio);
         }
-      }, 4000);
+      }, 5000);
 
       audio.preload = 'auto';
       audio.src = src;
@@ -188,11 +214,60 @@ class AssetsManager {
   }
 
   /**
-   * Параллельная загрузка всех ресурсов с прогрессом и Graceful Degradation
+   * Строгая загрузка звукового эффекта (SFX):
+   * 1. Загрузка через fetch в ArrayBuffer.
+   * 2. Декодирование в AudioBuffer через Web Audio API (для мгновенного воспроизведения без задержек и заиканий).
+   * 3. Создание резервной копии HTMLAudioElement на случай fallback.
+   * @param {string} src
+   * @returns {Promise<{ buffer: AudioBuffer|null, audio: HTMLAudioElement|null }>}
+   */
+  async _loadSoundBuffer(src) {
+    const audioCtx = this.getAudioContext();
+    let buffer = null;
+    let audioFallback = null;
+
+    try {
+      const response = await fetch(src);
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+
+      if (audioCtx) {
+        buffer = await new Promise((resolve) => {
+          audioCtx.decodeAudioData(
+            arrayBuffer.slice(0),
+            (decoded) => resolve(decoded),
+            (err) => {
+              console.warn(`[Assets] decodeAudioData fallback error for ${src}:`, err);
+              resolve(null);
+            }
+          ).catch(() => resolve(null));
+        });
+      }
+    } catch (err) {
+      console.warn(`[Assets] Fetch error for SFX "${src}":`, err.message);
+    }
+
+    // Резервный HTMLAudioElement
+    try {
+      audioFallback = await this._loadAudio(src);
+    } catch (e) {
+      // Игнорируем ошибку резервного аудио, если буфер уже есть
+    }
+
+    return { buffer, audio: audioFallback };
+  }
+
+  /**
+   * Параллельная загрузка всех ресурсов со строгим ожиданием и прогрессом
    * @param {Function} [onProgress] - callback(percent: number, item: object)
    * @returns {Promise<void>}
    */
   async load(onProgress = () => {}) {
+    // Инициализируем AudioContext заранее
+    this.getAudioContext();
+
     const { images = [], music = [], videos = [], sounds = [] } = this.manifest;
     const totalItems = images.length + music.length + videos.length + sounds.length;
     let completedItems = 0;
@@ -203,7 +278,7 @@ class AssetsManager {
       onProgress(percent, item);
     };
 
-    // Запуск параллельной загрузки изображений
+    // 1. Загрузка изображений
     const imagePromises = images.map(async (item) => {
       try {
         const img = await this._loadImage(item.src);
@@ -220,7 +295,7 @@ class AssetsManager {
       }
     });
 
-    // Запуск параллельной загрузки видео
+    // 2. Загрузка видео
     const videoPromises = videos.map(async (item) => {
       try {
         const video = await this._loadVideo(item.src);
@@ -237,7 +312,7 @@ class AssetsManager {
       }
     });
 
-    // Запуск параллельной загрузки музыки
+    // 3. Загрузка музыки
     const musicPromises = music.map(async (item) => {
       try {
         const audio = await this._loadAudio(item.src);
@@ -254,14 +329,24 @@ class AssetsManager {
       }
     });
 
-    // Запуск параллельной загрузки звуковых эффектов (SFX)
+    // 4. Загрузка звуковых эффектов (SFX) в память Web Audio API
     const soundPromises = sounds.map(async (item) => {
       try {
-        const audio = await this._loadAudio(item.src);
-        this.sounds.set(item.id, audio);
-        if (item.aliases) {
-          for (const alias of item.aliases) {
-            this.sounds.set(alias, audio);
+        const { buffer, audio } = await this._loadSoundBuffer(item.src);
+        if (buffer) {
+          this.soundBuffers.set(item.id, buffer);
+          if (item.aliases) {
+            for (const alias of item.aliases) {
+              this.soundBuffers.set(alias, buffer);
+            }
+          }
+        }
+        if (audio) {
+          this.sounds.set(item.id, audio);
+          if (item.aliases) {
+            for (const alias of item.aliases) {
+              this.sounds.set(alias, audio);
+            }
           }
         }
       } catch (err) {
@@ -303,7 +388,16 @@ class AssetsManager {
   }
 
   /**
-   * Получить загруженный звуковой эффект (SFX) по ключу или имени файла
+   * Получить Web Audio буфер звука по ключу
+   * @param {string} key
+   * @returns {AudioBuffer|null}
+   */
+  getSoundBuffer(key) {
+    return (this.soundBuffers && this.soundBuffers.get(key)) || null;
+  }
+
+  /**
+   * Получить резервный HTMLAudioElement звукового эффекта (SFX)
    * @param {string} key
    * @returns {HTMLAudioElement|null}
    */
@@ -317,7 +411,7 @@ class AssetsManager {
    * @returns {HTMLAudioElement|null}
    */
   getSFX(key) {
-    return (this.sounds && this.sounds.get(key)) || null;
+    return this.getSound(key);
   }
 }
 

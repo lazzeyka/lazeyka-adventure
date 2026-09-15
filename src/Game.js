@@ -821,6 +821,25 @@ export default class Game {
   renderParallaxBackground() {
     const { ctx, width, height } = this;
     const biome = LevelManager.getBiomeData(this.currentWorld);
+    const colors = biome?.fallbackColors || { top: '#0f172a', bottom: '#020617', arena: '#0b1120' };
+
+    // 1. Базовый цветной градиент-заглушка (гарантирует отсутствие пустот при задержке загрузки или медленной сети)
+    const baseGradient = ctx.createLinearGradient(0, 0, 0, height);
+    baseGradient.addColorStop(0, colors.top);
+    baseGradient.addColorStop(1, colors.bottom);
+    ctx.fillStyle = baseGradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Подложка под саму арену
+    ctx.fillStyle = colors.arena;
+    ctx.fillRect(
+      this.arena.left,
+      this.arena.top,
+      this.arena.right - this.arena.left,
+      this.arena.bottom - this.arena.top
+    );
+
+    // 2. Наложение фонового изображения биома с параллаксом (если загружено)
     const bg = Assets.getImage(biome.bgKey);
 
     if (bg) {
@@ -831,26 +850,23 @@ export default class Game {
       const bgX = baseOffset - parallaxShift;
 
       ctx.drawImage(bg, bgX, 0, this.bgRenderWidth, this.bgRenderHeight);
-
-      // Затемнение боковин
-      ctx.fillStyle = 'rgba(7, 11, 20, 0.6)';
-      ctx.fillRect(0, 0, this.arena.x, height);
-      ctx.fillRect(this.arena.x + this.arena.width, 0, width - (this.arena.x + this.arena.width), height);
-      ctx.fillRect(this.arena.x, 0, this.arena.width, this.arena.y);
-      ctx.fillRect(this.arena.x, this.arena.bottom, this.arena.width, height - this.arena.bottom);
-
-      // Затемнение арены
-      ctx.fillStyle = 'rgba(10, 15, 26, 0.30)';
-      ctx.fillRect(
-        this.arena.left,
-        this.arena.top,
-        this.arena.right - this.arena.left,
-        this.arena.bottom - this.arena.top
-      );
-    } else {
-      ctx.fillStyle = '#090d16';
-      ctx.fillRect(0, 0, width, height);
     }
+
+    // Затемнение боковин
+    ctx.fillStyle = 'rgba(7, 11, 20, 0.6)';
+    ctx.fillRect(0, 0, this.arena.x, height);
+    ctx.fillRect(this.arena.x + this.arena.width, 0, width - (this.arena.x + this.arena.width), height);
+    ctx.fillRect(this.arena.x, 0, this.arena.width, this.arena.y);
+    ctx.fillRect(this.arena.x, this.arena.bottom, this.arena.width, height - this.arena.bottom);
+
+    // Затемнение арены
+    ctx.fillStyle = 'rgba(10, 15, 26, 0.30)';
+    ctx.fillRect(
+      this.arena.left,
+      this.arena.top,
+      this.arena.right - this.arena.left,
+      this.arena.bottom - this.arena.top
+    );
   }
 
   renderPlaying() {
@@ -1121,14 +1137,17 @@ export default class Game {
     const { ctx, width, height } = this;
 
     // 1. Если экран еще не активирован (до нажатия клавиши или клика):
-    // Отображаем чистую статичную картинку title-screen.png БЕЗ какого-либо затемнения
+    // Всегда сначала отрисовываем базовый цветной фон-заглушку, затем накладываем изображение
+    const titleBaseGradient = ctx.createLinearGradient(0, 0, 0, height);
+    titleBaseGradient.addColorStop(0, '#0c1527');
+    titleBaseGradient.addColorStop(1, '#030712');
+    ctx.fillStyle = titleBaseGradient;
+    ctx.fillRect(0, 0, width, height);
+
     if (!this.isTitleActivated) {
       const bg = Assets.getImage('title-screen-bg') || Assets.getImage('title-screen.png');
       if (bg) {
         ctx.drawImage(bg, 0, 0, width, height);
-      } else {
-        ctx.fillStyle = '#05070f';
-        ctx.fillRect(0, 0, width, height);
       }
 
       // Текст названия игры и подсказка для старта
@@ -1180,11 +1199,6 @@ export default class Game {
       }
     }
 
-    if (!hasBg) {
-      ctx.fillStyle = '#05070f';
-      ctx.fillRect(0, 0, width, height);
-    }
-
     // Мягкое переливание цвета заголовка: золото <-> янтарь
     const pulse = Math.sin(this.titleBlinkTimer * 1.4) * 0.5 + 0.5; // 0..1
     const r = Math.round(251 + (255 - 251) * pulse);
@@ -1214,6 +1228,13 @@ export default class Game {
 
   renderMenu() {
     const { ctx, width, height } = this;
+
+    // Базовая фоновая заглушка для меню
+    const menuBaseGradient = ctx.createLinearGradient(0, 0, 0, height);
+    menuBaseGradient.addColorStop(0, '#0f172a');
+    menuBaseGradient.addColorStop(1, '#020617');
+    ctx.fillStyle = menuBaseGradient;
+    ctx.fillRect(0, 0, width, height);
 
     const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
     let hasBg = false;
@@ -1288,9 +1309,18 @@ export default class Game {
   renderIntro() {
     const { ctx, width, height } = this;
     const biome = LevelManager.getBiomeData(this.currentWorld);
+    const colors = biome?.fallbackColors || { top: '#0f172a', bottom: '#020617' };
+
+    // Базовая фоновая заглушка биома
+    const introBgGradient = ctx.createLinearGradient(0, 0, 0, height);
+    introBgGradient.addColorStop(0, colors.top);
+    introBgGradient.addColorStop(1, colors.bottom);
+    ctx.fillStyle = introBgGradient;
+    ctx.fillRect(0, 0, width, height);
+
     const bg = Assets.getImage(biome.bgKey);
 
-    // 1. Фоновое изображение биома
+    // 1. Фоновое изображение биома (если загружено)
     if (bg) {
       ctx.drawImage(bg, 0, 0, width, height);
       ctx.fillStyle = 'rgba(8, 11, 17, 0.78)';
@@ -1344,6 +1374,10 @@ export default class Game {
     const charX = boxX + 24;
     const charY = boxY - 45;
 
+    // Подложка под силуэт персонажа Лазейки
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.15)';
+    ctx.fillRect(charX, charY, charWidth, charHeight);
+
     if (cutsceneImg) {
       ctx.drawImage(cutsceneImg, charX, charY, charWidth, charHeight);
     }
@@ -1372,6 +1406,15 @@ export default class Game {
   renderLevelStart() {
     const { ctx, width, height } = this;
     const biome = LevelManager.getBiomeData(this.currentWorld);
+    const colors = biome?.fallbackColors || { top: '#0f172a', bottom: '#020617' };
+
+    // Базовая фоновая заглушка биома
+    const levelStartGradient = ctx.createLinearGradient(0, 0, 0, height);
+    levelStartGradient.addColorStop(0, colors.top);
+    levelStartGradient.addColorStop(1, colors.bottom);
+    ctx.fillStyle = levelStartGradient;
+    ctx.fillRect(0, 0, width, height);
+
     const bg = Assets.getImage(biome.bgKey);
 
     if (bg) {
@@ -1507,6 +1550,13 @@ export default class Game {
   renderCredits() {
     const { ctx, width, height } = this;
 
+    // Базовый цветной фон-заглушка под титры
+    const creditsBaseGradient = ctx.createLinearGradient(0, 0, 0, height);
+    creditsBaseGradient.addColorStop(0, '#0d1322');
+    creditsBaseGradient.addColorStop(1, '#03050a');
+    ctx.fillStyle = creditsBaseGradient;
+    ctx.fillRect(0, 0, width, height);
+
     // 1. Фоновое видео (то же, что и на Title-экране)
     const video = Assets.getVideo('title-screen-video') || Assets.getVideo('title-screen.mp4');
     if (video) {
@@ -1514,9 +1564,6 @@ export default class Game {
       if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, width, height);
       }
-    } else {
-      ctx.fillStyle = '#0a0d18';
-      ctx.fillRect(0, 0, width, height);
     }
 
     // 2. Затемнение поверх видео (CREDITS_VIDEO_DIM — параметр)
