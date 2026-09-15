@@ -114,21 +114,24 @@ export class Brick {
     if (biome === 1) {
       // Биом 1: Дикие Джунгли
       if (this.type === BrickType.NORMAL) {
-        baseColor = '#d97706';
-        topBevel = '#fcd34d';
-        bottomBevel = '#92400e';
-        borderColor = '#451a03';
+        // Простой блок (1 удар) — зеленый
+        baseColor = '#10b981';
+        topBevel = '#6ee7b7';
+        bottomBevel = '#047857';
+        borderColor = '#064e3b';
       } else if (this.type === BrickType.STRONG) {
+        // Прочный блок (2 удара) — коричневый (древесно-глиняный)
         if (this.hp === 2) {
-          baseColor = '#10b981';
-          topBevel = '#6ee7b7';
-          bottomBevel = '#047857';
-          borderColor = '#064e3b';
+          baseColor = '#92400e';
+          topBevel = '#d97706';
+          bottomBevel = '#713f12';
+          borderColor = '#451a03';
         } else {
-          baseColor = '#059669';
-          topBevel = '#34d399';
-          bottomBevel = '#065f46';
-          borderColor = '#022c22';
+          // После 1-го удара (треснувший/светлее)
+          baseColor = '#b45309';
+          topBevel = '#f59e0b';
+          bottomBevel = '#78350f';
+          borderColor = '#451a03';
         }
       } else if (this.type === BrickType.INDESTRUCTIBLE) {
         baseColor = '#475569';
