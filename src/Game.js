@@ -73,6 +73,8 @@ export default class Game {
     this.currentWorld = 1; // 1..4 (Биомы)
     this.currentLevel = 1; // 1..3 (Подуровни)
     this.score = 0;
+    this.scoreForNextLife = 10000; // Порог для следующей жизни
+    this.extraLifeBannerTimer = 0; // Таймер надписи «+1 ЖИЗНЬ!»
     this.lives = this.difficultySettings.lives;
     this.maxLives = this.difficultySettings.lives;
 
@@ -375,6 +377,8 @@ export default class Game {
     this.lives = this.difficultySettings.lives;
     this.maxLives = this.difficultySettings.lives;
     this.score = 0;
+    this.scoreForNextLife = 10000;
+    this.extraLifeBannerTimer = 0;
     this.currentWorld = 1;
     this.currentLevel = 1;
     this.paddle.width = this.difficultySettings.paddleWidth;
@@ -663,6 +667,9 @@ export default class Game {
     if (this.levelClearBannerTimer > 0) {
       this.levelClearBannerTimer -= dt;
     }
+    if (this.extraLifeBannerTimer > 0) {
+      this.extraLifeBannerTimer -= dt;
+    }
 
     for (const brick of this.bricks) {
       brick.update(dt);
@@ -751,7 +758,19 @@ export default class Game {
           SoundManager.playBlockHit(brick.type, result.hpBefore, result.hpAfter);
 
           if (result.score > 0) {
-            this.score += Math.round(result.score * this.difficultySettings.scoreMultiplier);
+            // Начисляем очки с комбо-бонусом: base * (1 + combo * 0.1)
+            const comboBonus = 1 + this.comboCount * 0.1;
+            const earned = Math.round(result.score * comboBonus * this.difficultySettings.scoreMultiplier);
+            this.score += earned;
+
+            // Бонусная жизнь за каждые 10 000 очков
+            while (this.score >= this.scoreForNextLife) {
+              this.scoreForNextLife += 10000;
+              if (this.lives < 9) {
+                this.lives++;
+                this.extraLifeBannerTimer = 2.0; // показывать 2 секунды
+              }
+            }
           }
 
           // Комбо: если блок разрушен — увеличиваем счётчик и пересчитываем скорость
@@ -991,6 +1010,45 @@ export default class Game {
       ctx.font = '16px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
       ctx.fillText('УРОВЕНЬ ПРОЙДЕН!', this.width / 2, this.arena.top + 200);
+    }
+
+    // 8. Баннер бонусной жизни
+    if (this.extraLifeBannerTimer > 0) {
+      // Плавное появление / угасание (первые 0.4 с и последние 0.4 с)
+      const FADE = 0.4;
+      const t = this.extraLifeBannerTimer;
+      const totalDur = 2.0;
+      let alpha = 1;
+      if (t > totalDur - FADE) {
+        alpha = (totalDur - t) / FADE;       // Fade-in
+      } else if (t < FADE) {
+        alpha = t / FADE;                    // Fade-out
+      }
+      alpha = Math.max(0, Math.min(1, alpha));
+
+      const cx = this.width / 2;
+      const cy = this.arena.top + 260;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      // Тень-свечение
+      ctx.shadowColor = '#22c55e';
+      ctx.shadowBlur = 18;
+
+      ctx.font = 'bold 20px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+
+      // Обводка
+      ctx.strokeStyle = '#064e3b';
+      ctx.lineWidth = 4;
+      ctx.strokeText('❤️ +1 ЖИЗНЬ!', cx, cy);
+
+      // Заливка
+      ctx.fillStyle = '#4ade80';
+      ctx.fillText('❤️ +1 ЖИЗНЬ!', cx, cy);
+
+      ctx.restore();
     }
   }
 
