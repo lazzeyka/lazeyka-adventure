@@ -35,6 +35,15 @@ export class MusicManager {
     const savedMuted = localStorage.getItem(STORAGE_KEY_MUTED);
     this.isMutedState = savedMuted !== null ? savedMuted === 'true' : false;
 
+    // =========================================================================
+    // DUCK ПРИ ПАУЗЕ:
+    // pauseDuckGain: текущее значение плавного приглушения (1 = норма, 0.25 = пауза)
+    // pauseDuckTarget: целевое значение (меняется в duckForPause / unduck)
+    // =========================================================================
+    this.pauseDuckGain = 1.0;
+    this.pauseDuckTarget = 1.0;
+    this.pauseDuckSpeed = 4.0; // скорость интерполяции (единиц/сек; 4.0 ≈ 0.25 с)
+
     // Состояние разблокировки аудиоконтекста/браузера
     this.unlocked = false;
     this.pendingTrack = null;
@@ -114,13 +123,37 @@ export class MusicManager {
   }
 
   /**
+   * Плавно приглушить музыку при паузе (до 25% текущего уровня)
+   */
+  duckForPause() {
+    this.pauseDuckTarget = 0.25;
+  }
+
+  /**
+   * Восстановить полную громкость после паузы
+   */
+  unduck() {
+    this.pauseDuckTarget = 1.0;
+  }
+
+  /**
+   * Текущий коэффициент duck-приглушения (используется SoundManager для SFX)
+   * @returns {number} 0..1
+   */
+  getPauseDuckGain() {
+    return this.pauseDuckGain;
+  }
+
+  /**
    * Вычисление и применение эффективной громкости к аудио-элементу
    * @param {HTMLAudioElement} audio
    * @param {number} gain 0..1
    */
   _applyVolume(audio, gain) {
     if (!audio) return;
-    const effective = this.isMutedState ? 0 : Math.max(0, Math.min(1, this.masterVolume * this.musicGain * gain));
+    const effective = this.isMutedState
+      ? 0
+      : Math.max(0, Math.min(1, this.masterVolume * this.musicGain * gain * this.pauseDuckGain));
     try {
       audio.volume = effective;
     } catch {
@@ -384,6 +417,17 @@ export class MusicManager {
     const tick = (now) => {
       const dt = (now - this.lastFrameTime) / 1000;
       this.lastFrameTime = now;
+
+      // Плавная интерполяция duck-множителя паузы
+      if (this.pauseDuckGain !== this.pauseDuckTarget) {
+        const step = this.pauseDuckSpeed * Math.min(dt, 0.05);
+        if (Math.abs(this.pauseDuckTarget - this.pauseDuckGain) <= step) {
+          this.pauseDuckGain = this.pauseDuckTarget;
+        } else {
+          this.pauseDuckGain += Math.sign(this.pauseDuckTarget - this.pauseDuckGain) * step;
+        }
+        this._updateAllVolumes();
+      }
 
       if (this.fadingTracks.length > 0) {
         const remaining = [];

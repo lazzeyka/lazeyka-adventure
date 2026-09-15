@@ -87,7 +87,8 @@ export class SoundManager {
 
     const masterVol = MusicManager.getVolume();
     const balance = this.volumeBalances[soundId] !== undefined ? this.volumeBalances[soundId] : 1.0;
-    const effectiveVol = Math.max(0, Math.min(1, masterVol * balance * volume));
+    const duckGain = MusicManager.getPauseDuckGain();
+    const effectiveVol = Math.max(0, Math.min(1, masterVol * balance * volume * duckGain));
 
     if (effectiveVol <= 0.001) return;
 

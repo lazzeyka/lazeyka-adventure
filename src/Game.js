@@ -570,9 +570,11 @@ export default class Game {
   togglePause() {
     if (this.state === GameState.PLAYING) {
       SoundManager.playPauseIn();
+      MusicManager.duckForPause();
       this.setState(GameState.PAUSED);
     } else if (this.state === GameState.PAUSED) {
       SoundManager.playPauseOut();
+      MusicManager.unduck();
       this.setState(GameState.PLAYING);
     }
   }
@@ -820,10 +822,6 @@ export default class Game {
       ) {
         this.ball.y = this.paddle.y - this.ball.radius;
         SoundManager.playPaddleHit();
-
-        // Сброс комбо при касании ракетки
-        this.comboCount = 0;
-        this.applyEffectiveSpeedToBall();
 
         const hitOffset = (this.ball.x - (this.paddle.x + this.paddle.width / 2)) / (this.paddle.width / 2);
         const clampedHit = Math.max(-0.9, Math.min(0.9, hitOffset));
