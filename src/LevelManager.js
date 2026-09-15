@@ -23,7 +23,10 @@ export const DIFFICULTY_SETTINGS = Object.freeze({
   [Difficulty.WALK]: {
     name: 'ПРОГУЛКА',
     lives: 5,
-    ballSpeed: 380,
+    ballSpeed: 380,           // Базовая скорость
+    maxSpeed: 600,            // Потолок скорости
+    comboSpeedBonus: 0.03,    // +3% к скорости за каждый блок в комбо
+    finishAccelRate: 0.05,    // Скорость таймерного разгона (+5% в сек при <= 5 блоках)
     paddleWidth: 130,
     paddleSpeed: 580,
     scoreMultiplier: 1.0
@@ -31,7 +34,10 @@ export const DIFFICULTY_SETTINGS = Object.freeze({
   [Difficulty.HARDCORE]: {
     name: 'ХАРДКОР',
     lives: 2,
-    ballSpeed: 480,
+    ballSpeed: 460,           // Базовая скорость
+    maxSpeed: 780,            // Потолок скорости
+    comboSpeedBonus: 0.05,    // +5% к скорости за каждый блок в комбо
+    finishAccelRate: 0.10,    // Скорость таймерного разгона (+10% в сек при <= 5 блоках)
     paddleWidth: 105,
     paddleSpeed: 540,
     scoreMultiplier: 1.5

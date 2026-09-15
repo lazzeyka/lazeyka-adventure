@@ -126,6 +126,11 @@ export default class Game {
       isStuck: true
     };
 
+    // Комбинированная система динамического ускорения мяча
+    this.comboCount = 0;          // Накопительное комбо за непрерывные разрушения блоков
+    this.finishAccelTimer = 0;    // Накопленное время таймерного разгона (при <= 5 блоках)
+    this.cheatMaxSpeed = false;   // Скрытый флаг максимальной скорости (чит 'L')
+
     this.bricks = [];
     this.boss = null;
     this.levelClearBannerTimer = 0;
@@ -146,6 +151,48 @@ export default class Game {
   }
 
   /**
+   * Расчет итоговой скорости мяча по единой формуле:
+   * 1. Базовая скорость из настроек сложности (ballSpeed).
+   * 2. Множитель комбо (1 + comboCount * comboSpeedBonus).
+   * 3. Таймерный множитель финишного разгона (1 + finishAccelTimer * finishAccelRate) при <= 5 активных блоках.
+   * 4. Обязательный потолок скорости через Math.min(..., maxSpeed).
+   * 5. Поддержка скрытого чита 'L' для тестирования предельной физики.
+   * @returns {number}
+   */
+  getEffectiveBallSpeed() {
+    const config = this.difficultySettings;
+    if (this.cheatMaxSpeed) {
+      return config.maxSpeed;
+    }
+
+    const baseSpeed = config.ballSpeed;
+    const comboMultiplier = 1 + (this.comboCount * (config.comboSpeedBonus || 0.03));
+    const finishMultiplier = 1 + (this.finishAccelTimer * (config.finishAccelRate || 0.05));
+
+    const calculatedSpeed = baseSpeed * comboMultiplier * finishMultiplier;
+    return Math.min(calculatedSpeed, config.maxSpeed);
+  }
+
+  /**
+   * Пересчет вектора скорости мяча с сохранением текущего угла направления
+   */
+  applyEffectiveSpeedToBall() {
+    if (this.ball.isStuck) {
+      this.ball.speed = this.getEffectiveBallSpeed();
+      return;
+    }
+    const currentMag = Math.hypot(this.ball.vx, this.ball.vy);
+    const targetSpeed = this.getEffectiveBallSpeed();
+    this.ball.speed = targetSpeed;
+
+    if (currentMag > 0.001) {
+      const factor = targetSpeed / currentMag;
+      this.ball.vx *= factor;
+      this.ball.vy *= factor;
+    }
+  }
+
+  /**
    * Инициализация
    */
   init() {
@@ -158,6 +205,8 @@ export default class Game {
    * Загрузка уровня через LevelManager
    */
   loadLevel() {
+    this.comboCount = 0;
+    this.finishAccelTimer = 0;
     this.resetBallOnPaddle();
     const { bricks, boss } = LevelManager.generateLevel(this.currentWorld, this.currentLevel, this.arena);
     this.bricks = bricks;
@@ -309,10 +358,11 @@ export default class Game {
    * Сброс мяча на ракетку
    */
   resetBallOnPaddle() {
+    this.comboCount = 0;
     this.ball.isStuck = true;
     this.ball.x = this.paddle.x + this.paddle.width / 2;
     this.ball.y = this.paddle.y - this.ball.radius - 2;
-    this.ball.speed = this.difficultySettings.ballSpeed;
+    this.ball.speed = this.getEffectiveBallSpeed();
     this.ball.vx = (this.ball.speed * 0.6) * (Math.random() > 0.5 ? 1 : -1);
     this.ball.vy = -this.ball.speed * 0.8;
     SoundManager.playPlayerSpawn();
@@ -386,9 +436,14 @@ export default class Game {
 
       // ЧИТ-КЛАВИШИ:
       if (e.code === 'KeyC') this.cheatClearLevel(); // Мгновенная очистка поля
-      if (e.code === 'KeyL') this.lives++;            // +1 жизнь
       if (e.code === 'KeyN') this.advanceLevel();     // След. уровень
       if (e.code === 'KeyH') this.toggleDifficulty(); // Смена сложности
+      // Скрытый инструмент тестирования физики на максимальном пределе скорости (чит L)
+      if (e.code === 'KeyL') {
+        this.cheatMaxSpeed = !this.cheatMaxSpeed;
+        this.applyEffectiveSpeedToBall();
+        console.log(`[Cheat L] Максимальная скорость мяча: ${this.cheatMaxSpeed ? 'ВКЛ (' + this.difficultySettings.maxSpeed + ' px/s)' : 'ВЫКЛ'}`);
+      }
 
       // Переключение экранов для отладки
       if (e.code === 'Digit1') this.setState(GameState.LOGO);
@@ -611,6 +666,17 @@ export default class Game {
       brick.update(dt);
     }
 
+    // Финишный разгон: при <=5 живых разрушаемых блоках накапливаем таймер
+    const activeDestructible = this.bricks.filter(b => b.isDestructible && !b.isDestroyed).length;
+    if (activeDestructible <= 5 && activeDestructible > 0) {
+      this.finishAccelTimer += dt;
+    } else if (activeDestructible > 5) {
+      this.finishAccelTimer = 0;
+    }
+
+    // Применяем итоговую скорость мяча каждый кадр
+    this.applyEffectiveSpeedToBall();
+
     // Логика движения и таймеров босса (X-3)
     if (this.boss && !this.boss.isDefeated) {
       if (this.boss.flashTimer > 0) {
@@ -686,6 +752,12 @@ export default class Game {
             this.score += Math.round(result.score * this.difficultySettings.scoreMultiplier);
           }
 
+          // Комбо: если блок разрушен — увеличиваем счётчик и пересчитываем скорость
+          if (brick.isDestroyed) {
+            this.comboCount++;
+            this.applyEffectiveSpeedToBall();
+          }
+
           const overlapX = this.ball.radius - Math.abs(distX);
           const overlapY = this.ball.radius - Math.abs(distY);
 
@@ -748,6 +820,10 @@ export default class Game {
       ) {
         this.ball.y = this.paddle.y - this.ball.radius;
         SoundManager.playPaddleHit();
+
+        // Сброс комбо при касании ракетки
+        this.comboCount = 0;
+        this.applyEffectiveSpeedToBall();
 
         const hitOffset = (this.ball.x - (this.paddle.x + this.paddle.width / 2)) / (this.paddle.width / 2);
         const clampedHit = Math.max(-0.9, Math.min(0.9, hitOffset));
