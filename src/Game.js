@@ -1506,12 +1506,13 @@ export default class Game {
     const charX = boxX + 24;
     const charY = boxY - 45;
 
-    // Подложка под силуэт персонажа Лазейки
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.15)';
-    ctx.fillRect(charX, charY, charWidth, charHeight);
-
     if (cutsceneImg) {
+      // Изображение загружено — рисуем его напрямую без подложки
       ctx.drawImage(cutsceneImg, charX, charY, charWidth, charHeight);
+    } else {
+      // Фоллбек: показываем цветную заглушку только пока картинка не загрузилась
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.15)';
+      ctx.fillRect(charX, charY, charWidth, charHeight);
     }
 
     // 5. Текст диалога: "ЛАЗЕЙКА: «...»" с крупным плотным шрифтом
